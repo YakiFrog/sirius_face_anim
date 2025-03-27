@@ -664,8 +664,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
             const sizeFactor = 0.5 + Math.random() * 0.5;
             // サイズに比例した速度（大きい涙ほど速く落ちる）
             const size = maxTearSize * sizeFactor;
-            const baseSpeed = 0.3;
-            const maxSpeedBonus = 0.4;
+            const baseSpeed = 0.2;
+            const maxSpeedBonus = 0.3;
             // サイズに比例して速度を調整（大きい涙ほど速く）
             const speed = baseSpeed + (maxSpeedBonus * sizeFactor);
             
@@ -673,6 +673,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
               active: Math.random() < 0.7, // ランダムに有効化
               offset: Math.random() * params.eyeSize * 0.8,
               speed: speed,
+              acceleration: 0.01 + Math.random() * 0.02, // 加速度を追加
+              maxSpeed: 1.5 + Math.random() * 1.0, // 最大速度を制限
               size: size
             };
           };
@@ -697,13 +699,21 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
               tear.offset
             );
             
+            // 涙に加速度を適用
+            tear.speed += tear.acceleration;
+            // 最大速度を制限
+            if (tear.speed > tear.maxSpeed) {
+              tear.speed = tear.maxSpeed;
+            }
             // 涙を下に移動
             tear.offset += tear.speed;
             
             // 涙が一定距離を超えたらリセット
             if (tear.offset > params.eyeSize * 1.5) {
               tear.offset = 0;
-              tear.speed = 0.3 + Math.random() * 0.4;
+              tear.speed = 0.2 + Math.random() * 0.3;
+              tear.acceleration = 0.01 + Math.random() * 0.02;
+              tear.maxSpeed = 1.5 + Math.random() * 1.0;
               tear.size = params.eyeSize * (0.15 + Math.random() * 0.1);
               // まれに涙を無効化して変化をつける
               tear.active = Math.random() < 0.9;
@@ -730,13 +740,21 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
               tear.offset
             );
             
+            // 涙に加速度を適用
+            tear.speed += tear.acceleration;
+            // 最大速度を制限
+            if (tear.speed > tear.maxSpeed) {
+              tear.speed = tear.maxSpeed;
+            }
             // 涙を下に移動
             tear.offset += tear.speed;
             
             // 涙が一定距離を超えたらリセット
             if (tear.offset > params.eyeSize * 1.5) {
               tear.offset = 0;
-              tear.speed = 0.3 + Math.random() * 0.4;
+              tear.speed = 0.2 + Math.random() * 0.3;
+              tear.acceleration = 0.01 + Math.random() * 0.02;
+              tear.maxSpeed = 1.5 + Math.random() * 1.0;
               tear.size = params.eyeSize * (0.15 + Math.random() * 0.1);
               // まれに涙を無効化して変化をつける
               tear.active = Math.random() < 0.9;
