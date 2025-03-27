@@ -263,7 +263,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     p5.leftEyePos.x += (p5.leftEyeTarget.x - p5.leftEyePos.x) * eyeMovementEase;
     p5.leftEyePos.y += (p5.leftEyeTarget.y - p5.leftEyePos.y) * eyeMovementEase;
     p5.rightEyePos.x += (p5.leftEyeTarget.x - p5.rightEyePos.x) * eyeMovementEase;
-    p5.rightEyePos.y += (p5.rightEyeTarget.y - p5.rightEyePos.y) * eyeMovementEase;
+    p5.rightEyePos.y += (p5.leftEyeTarget.y - p5.rightEyePos.y) * eyeMovementEase;
   };
   
   // 両目を描画する関数
@@ -386,104 +386,116 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     // まぶたが閉じている効果を反映した目の高さ
     const visibleEyeHeight = eyeHeight * Math.max(0.1, Math.min(upperLidOpenness, lowerLidOpenness));
     
-    // 2. 白目を描画
+    // 1. 白目を描画
     p5.stroke(255);
     p5.strokeWeight(outlineWeight);
-    p5.fill(255); // 輪郭の中を白で塗りつぶす
+    p5.fill(255);
     p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.95);
     
-    // 3. 瞳を描画（まぶたの下に配置）- 瞳は完全な円にする
+    // 2. 瞳を描画
     p5.fill(0);
     p5.noStroke();
     const pupilScale = Math.min(upperLidOpenness, lowerLidOpenness) * blinkAmount;
-
-    // 瞳のサイズは縦長にせず、同じサイズで円形に
     p5.ellipse(
       pupilPos.x,
       pupilPos.y + pupilYOffset + eyeCenterShift, 
       pupilSize * 1.5,
       pupilSize * 1.5 * Math.min(1, pupilScale)
     );
-
-    // 1. 背景の輪郭を白く描画し、内側は塗りつぶさない
-    p5.stroke(255);
-    p5.strokeWeight(outlineWeight * 0);
-    p5.noFill(); // 塗りつぶさない
-    // 白目より約10%大きく
-    p5.ellipse(0, eyeCenterShift, (eyeWidth + outlineWeight) * 1.0, ((visibleEyeHeight + outlineWeight) * 0.95) * 1.0);
     
-    // 4. 上まぶたを描画
+    // 3. 上まぶたを描画
+    let upperLidPosition = 0;
     if (upperLidOpenness < 1.0) {
-      // 上まぶたの位置
-      const upperLidPosition = eyeCenterShift + upperLidY * 0.7;
+      upperLidPosition = eyeCenterShift + upperLidY * 0.7;
       
       // 黒い上まぶたを描画
+      // p5.fill(255,0,0,100);
       p5.fill(0);
       p5.noStroke();
       p5.beginShape();
-      p5.vertex(-eyeWidth/2 - outlineWeight, -eyeHeight/2 - outlineWeight);
-      p5.vertex(eyeWidth/2 + outlineWeight, -eyeHeight/2 - outlineWeight);
-      p5.vertex(eyeWidth/2 + outlineWeight, upperLidPosition);
+      p5.vertex(-eyeWidth * 0.7, -eyeHeight);
+      p5.vertex(eyeWidth * 0.7, -eyeHeight);
+      p5.vertex(eyeWidth * 0.7, upperLidPosition);
       
-      // まぶたの曲線部分
-      for (let x = eyeWidth/2; x >= -eyeWidth/2; x -= eyeWidth/10) {
-        p5.vertex(x, upperLidPosition);
+      // まぶたの曲線部分 - 滑らかな曲線に
+      const steps = 12;
+      for (let i = 0; i <= steps; i++) {
+        const x = eyeWidth * 0.7 - (eyeWidth * 1.4 * i / steps);
+        // 自然な曲線のためのY座標（中央がやや下にカーブ）
+        const curveY = upperLidPosition;
+        p5.vertex(x, curveY);
       }
       
-      p5.vertex(-eyeWidth/2 - outlineWeight, upperLidPosition);
       p5.endShape(p5.CLOSE);
     }
     
-    // 5. 下まぶたを描画
+    // 4. 下まぶたを描画
+    let lowerLidPosition = 0;
     if (lowerLidOpenness < 1.0) {
-      // 下まぶたの位置
-      const lowerLidPosition = eyeCenterShift + lowerLidY * 0.4;
+      lowerLidPosition = eyeCenterShift + lowerLidY * 0.4;
       
       // 黒い下まぶたを描画
+      // p5.fill(255,0,0,100);
       p5.fill(0);
       p5.noStroke();
       p5.beginShape();
-      p5.vertex(-eyeWidth/2 - outlineWeight, eyeHeight/2 + outlineWeight);
-      p5.vertex(eyeWidth/2 + outlineWeight, eyeHeight/2 + outlineWeight);
-      p5.vertex(eyeWidth/2 + outlineWeight, lowerLidPosition);
+      p5.vertex(-eyeWidth * 0.7, eyeHeight);
+      p5.vertex(eyeWidth * 0.7, eyeHeight);
+      p5.vertex(eyeWidth * 0.7, lowerLidPosition);
       
-      // まぶたの曲線部分
-      for (let x = eyeWidth/2; x >= -eyeWidth/2; x -= eyeWidth/10) {
-        p5.vertex(x, lowerLidPosition);
+      // まぶたの曲線部分 - 滑らかな曲線に
+      const steps = 12;
+      for (let i = 0; i <= steps; i++) {
+        const x = eyeWidth * 0.7 - (eyeWidth * 1.4 * i / steps);
+        // 自然な曲線のためのY座標（中央がやや上にカーブ）
+        const curveY = lowerLidPosition;
+        p5.vertex(x, curveY);
       }
       
-      p5.vertex(-eyeWidth/2 - outlineWeight, lowerLidPosition);
       p5.endShape(p5.CLOSE);
     }
     
-    // 6. まぶたの白い縁を描画 (最後に描画して瞳より上に表示)
+    // 5. まぶたの白い縁を描画（単純化して自然に）
+    p5.stroke(255);
+    p5.strokeWeight(outlineWeight * 0.8); // わずかに太めに
+    p5.strokeCap(p5.ROUND); // 線の端を丸く
+    
+    // 上まぶたの白い縁
     if (upperLidOpenness < 1.0) {
-      const upperLidPosition = eyeCenterShift + upperLidY * 0.670;
-      
-      // 上まぶたの下に白い線を追加
-      p5.stroke(255);
-      p5.strokeWeight(outlineWeight * 0.7);
-      p5.noFill();
+      // 白目と重なる部分だけに単純な曲線を描画
       p5.beginShape();
-      for (let x = -eyeWidth/2.3; x <= eyeWidth/2.3; x += eyeWidth/15) {
+      p5.noFill();
+      p5.vertex(-eyeWidth * 0.3, upperLidPosition);
+      
+      // この曲線は横方向に真っ直ぐでOK - シンプルさが効果的
+      for (let x = -eyeWidth * 0.5; x <= eyeWidth * 0.5; x += eyeWidth / 10) {
         p5.vertex(x, upperLidPosition);
       }
+      
+      p5.vertex(eyeWidth * 0.5, upperLidPosition);
       p5.endShape();
     }
     
+    // 下まぶたの白い縁
     if (lowerLidOpenness < 1.0) {
-      const lowerLidPosition = eyeCenterShift + lowerLidY * 0.375;
-      
-      // 下まぶたの上に白い線を追加
-      p5.stroke(255);
-      p5.strokeWeight(outlineWeight * 0.7);
-      p5.noFill();
+      // 白目と重なる部分だけに単純な曲線を描画
       p5.beginShape();
-      for (let x = -eyeWidth/2.3; x <= eyeWidth/2.3; x += eyeWidth/15) {
+      p5.noFill();
+      p5.vertex(-eyeWidth * 0.5, lowerLidPosition);
+      
+      // この曲線は横方向に真っ直ぐでOK - シンプルさが効果的
+      for (let x = -eyeWidth * 0.5; x <= eyeWidth * 0.5; x += eyeWidth / 10) {
         p5.vertex(x, lowerLidPosition);
       }
+      
+      p5.vertex(eyeWidth * 0.5, lowerLidPosition);
       p5.endShape();
     }
+    // 目の外側に黒い縁を描画
+    p5.noFill();
+    p5.stroke(0);
+    p5.strokeWeight(outlineWeight * 4.0);
+    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight * 3, (visibleEyeHeight + outlineWeight * 3) * 1.0);
     
     // 描画設定をリセット
     p5.strokeWeight(1);
