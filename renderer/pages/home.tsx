@@ -9,25 +9,33 @@ export default function HomePage() {
       <Head>
         <title>p5.js Full Screen Demo</title>
         <style jsx global>{`
+          /* リセット */
           html, body, #__next {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100vh;
             overflow: hidden;
+            background-color: #000;
           }
           
+          /* コンテナのセンタリング */
           .sketch-container {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            display: block;
+            display: grid;
+            place-items: center;
+            background-color: #000;
+            overflow: hidden;
           }
           
+          /* キャンバス用の特定スタイル */
           canvas {
-            display: block;
+            position: relative !important;
+            margin: auto !important;
           }
         `}</style>
       </Head>
