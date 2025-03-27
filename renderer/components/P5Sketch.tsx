@@ -15,6 +15,8 @@ interface P5SketchProps {
 export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 400, height = 400 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
+  const [cursorVisible, setCursorVisible] = useState(true);
+  const mouseTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -28,10 +30,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   // 瞬き用のrefをトップレベルで宣言
   const blinkRef = useRef(1); // 1: 完全に開いた状態、0.25: 最も閉じた状態
   
-  // マウスポインタ非表示のための状態を追加
-  const [cursorVisible, setCursorVisible] = useState(true);
-  const mouseTimerRef = useRef<NodeJS.Timeout | null>(null);
-
+  // 表情の種類
+  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying';
+  // 表情を状態で保持
+  const [expression, setExpression] = useState<FacialExpression>('neutral');
+  
   // リサイズ関連の処理
   useEffect(() => {
     if (fullScreen) {
@@ -69,6 +72,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       };
     }
   }, [fullScreen]);
+
+  // 表情切り替え用のタイマーを設定
+  // useEffect(() => {
+  //   const changeExpression = () => {
+  //     const expressions: FacialExpression[] = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying'];
+  //     const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+  //     setExpression(randomExpression);
+  //   };
+    
+  //   const timer = setInterval(changeExpression, 5000 + Math.random() * 5000);
+  //   return () => clearInterval(timer);
+  // }, []);
 
   // マウスの動きを監視して一定時間後にポインタを非表示にする
   useEffect(() => {
@@ -166,7 +181,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     const baseEyeSize = baseWidth / 4.5;  // 基準解像度でのサイズ
     const baseEyeSpacing = baseEyeSize * 0.95;
     const basePupilSize = baseEyeSize / 2.3;
-    const baseEyeYOffset = baseHeight / 2 - baseHeight / 2.3;
+    const baseEyeYOffset = baseHeight / 8;
     
     // 現在のスケールに合わせて調整
     const scale = scaleFactorRef.current;
@@ -254,75 +269,327 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   // 両目を描画する関数
   const drawEyes = (p5, params) => {
     // サイズ係数を適用して目を描画
-    const currentEyeWidth = params.eyeSize;
-    const currentEyeHeight = params.eyeSize * p5.eyeVerticalFactor;
-    const currentPupilSize = params.pupilSize;
+    let currentEyeWidth = params.eyeSize;
+    let currentEyeHeight = params.eyeSize * p5.eyeVerticalFactor;
+    let currentPupilSize = params.pupilSize;
     const blinkAmount = blinkRef.current;
     
-    // 左目
-    p5.fill(255);
-    p5.ellipse(
-      p5.width / 2 - params.eyeSpacing, 
-      p5.height / 2 - params.eyeYOffset, 
-      currentEyeWidth, 
-      currentEyeHeight * blinkAmount
-    ); 
+    // 表情に応じて目の形状や位置を調整するパラメータ
+    let eyeAngle = 0; // 目の角度（ラジアン）
+    let eyeWidthFactor = 1.0; // 目の横幅調整係数
+    let eyeHeightFactor = 1.0; // 目の縦幅調整係数
+    let pupilSizeFactor = 1.0; // 瞳のサイズ調整係数
+    let eyeYOffset = 0; // 目のY位置オフセット
+    let pupilYOffset = 0; // 瞳のY位置オフセット
     
-    p5.fill(0);
-    p5.ellipse(
-      p5.width / 2 - params.eyeSpacing + p5.leftEyePos.x, 
-      p5.height / 2 - params.eyeYOffset + p5.leftEyePos.y, 
-      currentPupilSize * 1.5, 
-      currentPupilSize * 1.5 * blinkAmount
-    );
+    // まぶたの制御パラメータ（0: 完全に閉じている、1: 完全に開いている）
+    let upperEyelid = 1.0;  // 上まぶた
+    let lowerEyelid = 1.0;  // 下まぶた
+    
+    // 表情に応じたパラメータの設定
+    switch (expression) {
+      case 'neutral': // 通常
+        eyeAngle = 0;
+        eyeWidthFactor = 1.0;
+        eyeHeightFactor = 1.0;
+        pupilSizeFactor = 1.0;
+        upperEyelid = 1.0;
+        lowerEyelid = 0.5;
+        break;
+        
+      case 'happy': // 笑顔
+        eyeAngle = -0.07; // 少し上向きの目
+        eyeHeightFactor = 0.85; // 少し細める
+        eyeWidthFactor = 1.05; // 少し広げる
+        eyeYOffset = -params.eyeSize * 0.05; // 少し上にシフト
+        upperEyelid = 0.7; // 上まぶたを少し閉じる（笑顔の効果）
+        lowerEyelid = 1.0; 
+        break;
+        
+      case 'angry': // 怒り
+        eyeAngle = 0.15; // 目尻が下がった怒った目
+        eyeWidthFactor = 0.95; // 少し幅を狭める
+        eyeHeightFactor = 0.9; // 少し縦に狭める
+        pupilSizeFactor = 0.9; // 瞳を少し小さく
+        eyeYOffset = params.eyeSize * 0.1; // 少し下にシフト
+        pupilYOffset = params.eyeSize * 0.05; // 瞳を少し下にずらす
+        upperEyelid = 0.85; // 上まぶたを少し下げる
+        lowerEyelid = 0.95; // 下まぶたを少し上げる
+        break;
+        
+      case 'sad': // 悲しみ
+        eyeAngle = -0.15; // 目尻が上がった悲しい目
+        eyeWidthFactor = 0.9; // 幅を狭める
+        eyeHeightFactor = 0.85; // 縦に狭める
+        eyeYOffset = params.eyeSize * 0.15; // 下にシフト
+        upperEyelid = 0.9; // 上まぶたを少し下げる
+        lowerEyelid = 0.9; // 下まぶたを少し上げる
+        break;
+        
+      case 'surprised': // 驚き
+        eyeWidthFactor = 1.2; // 目を大きく
+        eyeHeightFactor = 1.3; // 目を大きく
+        pupilSizeFactor = 0.8; // 瞳を小さく
+        eyeYOffset = -params.eyeSize * 0.1; // 少し上にシフト
+        upperEyelid = 1.0; // 完全に開く
+        lowerEyelid = 1.0; // 完全に開く
+        break;
+        
+      case 'crying': // 泣き
+        eyeAngle = -0.1; // 目尻が上がった悲しい目
+        eyeWidthFactor = 0.9; // 幅を狭める
+        eyeHeightFactor = 0.9; // 縦に狭める
+        eyeYOffset = params.eyeSize * 0.1; // 下にシフト
+        upperEyelid = 0.8; // 上まぶたを少し下げる
+        lowerEyelid = 0.7; // 下まぶたをより上げる（泣きの表現）
+        break;
+    }
+    
+    // 調整されたサイズを適用
+    currentEyeWidth *= eyeWidthFactor;
+    currentEyeHeight *= eyeHeightFactor * blinkAmount;
+    currentPupilSize *= pupilSizeFactor;
+    
+    // 左目の描画
+    p5.push(); // 現在の描画設定を保存
+    p5.translate(p5.width / 2 - params.eyeSpacing, p5.height / 2 - params.eyeYOffset + eyeYOffset);
+    p5.rotate(eyeAngle);
+    
+    // まぶたの効果を適用して目を描画
+    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, upperEyelid, lowerEyelid, p5.leftEyePos, pupilYOffset, currentPupilSize, blinkAmount);
+    
+    p5.pop(); // 描画設定を元に戻す
+    
+    // 右目の描画
+    p5.push();
+    p5.translate(p5.width / 2 + params.eyeSpacing, p5.height / 2 - params.eyeYOffset + eyeYOffset);
+    p5.rotate(-eyeAngle); // 左右対称になるよう符号を反転
+    
+    // まぶたの効果を適用して目を描画
+    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, upperEyelid, lowerEyelid, p5.rightEyePos, pupilYOffset, currentPupilSize, blinkAmount);
+    
+    p5.pop();
+  };
 
-    // 右目
-    p5.fill(255);
-    p5.ellipse(
-      p5.width / 2 + params.eyeSpacing, 
-      p5.height / 2 - params.eyeYOffset, 
-      currentEyeWidth, 
-      currentEyeHeight * blinkAmount
-    );
+  // まぶたの効果を適用して目を描画する関数
+  const drawEyeWithLids = (p5, eyeWidth, eyeHeight, upperLidOpenness, lowerLidOpenness, pupilPos, pupilYOffset, pupilSize, blinkAmount) => {
+    // 目の中心位置の調整（まぶたの影響）
+    const upperLidY = -eyeHeight/2 + eyeHeight * (1 - upperLidOpenness);
+    const lowerLidY = eyeHeight/2 - eyeHeight * (1 - lowerLidOpenness);
     
+    // 目の中心が移動した分だけ瞳も移動するための計算
+    const eyeCenterShift = (upperLidY + lowerLidY) / 2 * 0.4;
+    
+    // 白目を描画（円形）
+    p5.fill(255);
+    p5.noStroke();
+    
+    // 基本の円形の目を描画
+    p5.ellipse(0, eyeCenterShift, eyeWidth, eyeHeight);
+    
+    // 上まぶたの効果（黒い半円で隠す）
+    if (upperLidOpenness < 1.0) {
+      p5.fill(0);
+      p5.arc(
+        0, 
+        eyeCenterShift + upperLidY * 0.7, 
+        eyeWidth * 1.2, 
+        eyeHeight * 1.8, 
+        p5.PI, p5.TWO_PI, p5.CHORD
+      );
+    }
+    
+    // 下まぶたの効果（黒い半円で隠す）
+    if (lowerLidOpenness < 1.0) {
+      p5.fill(0);
+      p5.arc(
+        0, 
+        eyeCenterShift + lowerLidY * 0.4, 
+        eyeWidth * 1.2, 
+        eyeHeight * 1.8, 
+        0, p5.PI, p5.CHORD
+      );
+    }
+    
+    // 瞳を描画
     p5.fill(0);
     p5.ellipse(
-      p5.width / 2 + params.eyeSpacing + p5.rightEyePos.x, 
-      p5.height / 2 - params.eyeYOffset + p5.rightEyePos.y, 
-      currentPupilSize * 1.5, 
-      currentPupilSize * 1.5 * blinkAmount
+      pupilPos.x,
+      pupilPos.y + pupilYOffset + eyeCenterShift, 
+      pupilSize * 1.5,
+      pupilSize * 1.5 * blinkAmount * Math.min(upperLidOpenness, lowerLidOpenness) * 1.2
     );
   };
 
   // 口を描画する関数
-  const drawMouth = (p5, params) => {
+  const drawMouth = (p5: any, params: any) => {
     const mouthWidth = params.eyeSize * 1.5;
     const mouthHeight = params.eyeSize * 0.4;
-    const mouthY = p5.height / 2 + params.eyeYOffset * 2.5;
-
+    let mouthY = p5.height / 2 + params.eyeYOffset * 1.1;
+    
     // 線の太さもスケールに合わせる
-    const strokeWeight = 30 * scaleFactorRef.current;
+    const strokeWeight = 40 * scaleFactorRef.current;
     
     // 白色に設定
     p5.stroke(255);
     p5.noFill();
     p5.strokeWeight(strokeWeight);
+    
+    // キーボード入力処理を追加
+    p5.keyPressed = () => {
+      if (p5.key >= '1' && p5.key <= '6') {
+        const expressionMap: Record<string, FacialExpression> = {
+          '1': 'neutral',
+          '2': 'happy',
+          '3': 'angry',
+          '4': 'sad',
+          '5': 'surprised',
+          '6': 'crying'
+        };
+        setExpression(expressionMap[p5.key]);
+      }
+    };
 
-    p5.beginShape();
-    p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY);
-    p5.bezierVertex(
-      p5.width / 2 - mouthWidth / 4, 
-      mouthY + mouthHeight, 
-      p5.width / 2 + mouthWidth / 4, 
-      mouthY + mouthHeight, 
-      p5.width / 2 + mouthWidth / 2, 
-      mouthY
-    );
-    p5.endShape();
+    // 表情によって口の位置を調整
+    switch (expression) {
+      case 'neutral':
+        mouthY += params.eyeSize * 0.05;
+        break;
+      case 'happy':
+        mouthY += params.eyeSize * 0.01;
+        break;
+      case 'angry':
+        mouthY -= params.eyeSize * 0.1;
+        break;
+      case 'sad':
+        mouthY += params.eyeSize * 0.3;
+        break;
+      case 'surprised':
+        mouthY += params.eyeSize * 0.05;
+        break;
+      case 'crying':
+        mouthY += params.eyeSize * 0.2;
+        break;
+    }
+    
+    switch (expression) {
+      case 'neutral': // なんでもない口
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY);
+        p5.bezierVertex(
+          p5.width / 2 - mouthWidth / 4, 
+          mouthY + mouthHeight * 0.6, 
+          p5.width / 2 + mouthWidth / 4, 
+          mouthY + mouthHeight * 0.6, 
+          p5.width / 2 + mouthWidth / 2, 
+          mouthY
+        );
+        p5.endShape();
+        break;
+        
+      case 'happy': // 笑顔
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY);
+        p5.bezierVertex(
+          p5.width / 2 - mouthWidth / 4, 
+          mouthY + mouthHeight * 1.2, 
+          p5.width / 2 + mouthWidth / 4, 
+          mouthY + mouthHeight * 1.2, 
+          p5.width / 2 + mouthWidth / 2, 
+          mouthY
+        );
+        p5.endShape();
+        break;
+        
+      case 'angry': // 怒り
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY + mouthHeight * 0.5);
+        p5.bezierVertex(
+          p5.width / 2 - mouthWidth / 4, 
+          mouthY - mouthHeight * 0.3, 
+          p5.width / 2 + mouthWidth / 4, 
+          mouthY - mouthHeight * 0.3, 
+          p5.width / 2 + mouthWidth / 2, 
+          mouthY + mouthHeight * 0.5
+        );
+        p5.endShape();
+        break;
+        
+      case 'sad': // 悲しみ
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY - mouthHeight * 0.3);
+        p5.bezierVertex(
+          p5.width / 2 - mouthWidth / 4, 
+          mouthY - mouthHeight * 0.8, 
+          p5.width / 2 + mouthWidth / 4, 
+          mouthY - mouthHeight * 0.8, 
+          p5.width / 2 + mouthWidth / 2, 
+          mouthY - mouthHeight * 0.3
+        );
+        p5.endShape();
+        break;
+        
+      case 'surprised': // 驚き
+        // 縦長の丸い口（驚きを表現）
+        p5.beginShape();
+        const surprisedMouthWidth = mouthWidth * 0.35;
+        const surprisedMouthHeight = mouthHeight * 2.0;
+        
+        // 上半分の曲線
+        p5.vertex(p5.width / 2 - surprisedMouthWidth / 2, mouthY);
+        p5.bezierVertex(
+          p5.width / 2 - surprisedMouthWidth / 2, mouthY - surprisedMouthHeight / 2,
+          p5.width / 2 + surprisedMouthWidth / 2, mouthY - surprisedMouthHeight / 2,
+          p5.width / 2 + surprisedMouthWidth / 2, mouthY
+        );
+        
+        // 下半分の曲線
+        p5.bezierVertex(
+          p5.width / 2 + surprisedMouthWidth / 2, mouthY + surprisedMouthHeight / 2,
+          p5.width / 2 - surprisedMouthWidth / 2, mouthY + surprisedMouthHeight / 2,
+          p5.width / 2 - surprisedMouthWidth / 2, mouthY
+        );
+        
+        p5.endShape(p5.CLOSE);
+        break;
+        
+      case 'crying': // 泣き
+        // 悲しい口
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY - mouthHeight * 0.3);
+        p5.bezierVertex(
+          p5.width / 2 - mouthWidth / 4, 
+          mouthY - mouthHeight * 0.8, 
+          p5.width / 2 + mouthWidth / 4, 
+          mouthY - mouthHeight * 0.8, 
+          p5.width / 2 + mouthWidth / 2, 
+          mouthY - mouthHeight * 0.3
+        );
+        p5.endShape();
+        
+        // 涙を描画
+        const tearSize = params.eyeSize * 0.2;
+        p5.fill(255);
+        p5.noStroke();
+        p5.ellipse(
+          p5.width / 2 - params.eyeSpacing - params.eyeSize * 0.3,
+          p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
+          tearSize,
+          tearSize * 1.5
+        );
+        p5.ellipse(
+          p5.width / 2 + params.eyeSpacing + params.eyeSize * 0.3,
+          p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
+          tearSize,
+          tearSize * 1.5
+        );
+        p5.stroke(255);
+        break;
+    }
     
     // ストロークの設定をリセット
     p5.strokeWeight(1);
-  }
+  };
 
   // キャンバスがリサイズされたときにp5のキャンバスサイズも更新
   const windowResized = (p5) => {
