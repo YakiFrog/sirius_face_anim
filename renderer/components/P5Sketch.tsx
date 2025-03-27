@@ -299,28 +299,28 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         
       case 'happy': // 笑顔
         eyeAngle = -0.07; // 少し上向きの目
-        eyeHeightFactor = 0.85; // 少し細める
-        eyeWidthFactor = 1.05; // 少し広げる
-        eyeYOffset = -params.eyeSize * 0.05; // 少し上にシフト
-        upperEyelid = 0.7; // 上まぶたを少し閉じる（笑顔の効果）
-        lowerEyelid = 1.0; 
+        // eyeHeightFactor = 1.15; // 少し細める
+        // eyeWidthFactor = 1.05; // 少し広げる
+        // eyeYOffset = -params.eyeSize * 0.05; // 少し上にシフト
+        // upperEyelid = 0.7; // 上まぶたを少し閉じる（笑顔の効果）
+        lowerEyelid = 0.9; 
         break;
         
       case 'angry': // 怒り
-        eyeAngle = 0.15; // 目尻が下がった怒った目
-        eyeWidthFactor = 0.95; // 少し幅を狭める
-        eyeHeightFactor = 0.9; // 少し縦に狭める
-        pupilSizeFactor = 0.9; // 瞳を少し小さく
-        eyeYOffset = params.eyeSize * 0.1; // 少し下にシフト
-        pupilYOffset = params.eyeSize * 0.05; // 瞳を少し下にずらす
-        upperEyelid = 0.85; // 上まぶたを少し下げる
-        lowerEyelid = 0.95; // 下まぶたを少し上げる
+        eyeAngle = 0.20; // 目尻が下がった怒った目
+        // eyeWidthFactor = 0.90; // 少し幅を狭める
+        // eyeHeightFactor = 0.90; // 少し縦に狭める
+        // pupilSizeFactor = 0.9; // 瞳を少し小さく
+        // eyeYOffset = params.eyeSize * 0.1; // 少し下にシフト
+        // pupilYOffset = params.eyeSize * 0.05; // 瞳を少し下にずらす
+        upperEyelid = 0.75; // 上まぶたを少し下げる
+        // lowerEyelid = 0.95; // 下まぶたを少し上げる
         break;
         
       case 'sad': // 悲しみ
-        eyeAngle = -0.15; // 目尻が上がった悲しい目
+        eyeAngle = -0.25; // 目尻が上がった悲しい目
         eyeWidthFactor = 0.9; // 幅を狭める
-        eyeHeightFactor = 0.85; // 縦に狭める
+        eyeHeightFactor = 0.95; // 縦に狭める
         eyeYOffset = params.eyeSize * 0.15; // 下にシフト
         upperEyelid = 0.9; // 上まぶたを少し下げる
         lowerEyelid = 0.9; // 下まぶたを少し上げる
@@ -387,10 +387,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     const visibleEyeHeight = eyeHeight * Math.max(0.1, Math.min(upperLidOpenness, lowerLidOpenness));
     
     // 1. 白目を描画
-    p5.stroke(255);
-    p5.strokeWeight(outlineWeight);
+    // p5.stroke(255, 0, 0, 100);
+    // p5.strokeWeight(outlineWeight);
     p5.fill(255);
-    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.95);
+    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.92);
     
     // 2. 瞳を描画
     p5.fill(0);
@@ -402,6 +402,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       pupilSize * 1.5,
       pupilSize * 1.5 * Math.min(1, pupilScale)
     );
+
+    // 白目を描画する一回り小さい円
+    p5.noFill();
+    p5.stroke(255, 255, 255, 255);
+    // p5.stroke(255, 0, 0, 100);
+    p5.strokeWeight(outlineWeight * 1.5);
+    p5.ellipse(0, eyeCenterShift, eyeWidth * 0.87 + outlineWeight, (visibleEyeHeight * 0.87 + outlineWeight));
     
     // 3. 上まぶたを描画
     let upperLidPosition = 0;
@@ -537,19 +544,19 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         mouthY += params.eyeSize * 0.05;
         break;
       case 'happy':
-        mouthY += params.eyeSize * 0.01;
+        mouthY -= params.eyeSize * 0.27;
         break;
       case 'angry':
         mouthY -= params.eyeSize * 0.1;
         break;
       case 'sad':
-        mouthY += params.eyeSize * 0.3;
+        mouthY += params.eyeSize * 0.15;
         break;
       case 'surprised':
         mouthY += params.eyeSize * 0.05;
         break;
       case 'crying':
-        mouthY += params.eyeSize * 0.2;
+        mouthY -= params.eyeSize * 0.05;
         break;
     }
     
@@ -647,29 +654,183 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
           mouthY - mouthHeight * 0.3
         );
         p5.endShape();
-        
         // 涙を描画
-        const tearSize = params.eyeSize * 0.2;
-        p5.fill(255);
-        p5.noStroke();
-        p5.ellipse(
-          p5.width / 2 - params.eyeSpacing - params.eyeSize * 0.3,
-          p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
-          tearSize,
-          tearSize * 1.5
-        );
-        p5.ellipse(
-          p5.width / 2 + params.eyeSpacing + params.eyeSize * 0.3,
-          p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
-          tearSize,
-          tearSize * 1.5
-        );
+        // 複数の涙を描画（左右それぞれ最大3つ）
+        if (!p5.tears) {
+          // 涙のパラメータを初期化
+          const maxTearSize = params.eyeSize * 0.25; // 最大の涙サイズを設定
+          const createTear = () => {
+            // 0.5から1.0の範囲でランダムなサイズ係数を生成
+            const sizeFactor = 0.5 + Math.random() * 0.5;
+            // サイズに比例した速度（大きい涙ほど速く落ちる）
+            const size = maxTearSize * sizeFactor;
+            const baseSpeed = 0.3;
+            const maxSpeedBonus = 0.4;
+            // サイズに比例して速度を調整（大きい涙ほど速く）
+            const speed = baseSpeed + (maxSpeedBonus * sizeFactor);
+            
+            return {
+              active: Math.random() < 0.7, // ランダムに有効化
+              offset: Math.random() * params.eyeSize * 0.8,
+              speed: speed,
+              size: size
+            };
+          };
+          
+          p5.tears = {
+            left: Array(3).fill(0).map(() => createTear()),
+            right: Array(3).fill(0).map(() => createTear())
+          };
+        }
+        // 左側の涙を描画
+        p5.tears.left.forEach((tear, index) => {
+          if (tear.active) {
+            // 涙の位置を少しずつずらす - より上側に配置
+            const xOffset = params.eyeSize * 0.2 * (index - 1) - params.eyeSize * 0.3;
+            const yOffset = -params.eyeSize * 0.2;
+            drawTear(
+              p5,
+              p5.width / 2 - params.eyeSpacing + xOffset,
+              p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + yOffset,
+              tear.size,
+              tear.size * 1.5,
+              tear.offset
+            );
+            
+            // 涙を下に移動
+            tear.offset += tear.speed;
+            
+            // 涙が一定距離を超えたらリセット
+            if (tear.offset > params.eyeSize * 1.5) {
+              tear.offset = 0;
+              tear.speed = 0.3 + Math.random() * 0.4;
+              tear.size = params.eyeSize * (0.15 + Math.random() * 0.1);
+              // まれに涙を無効化して変化をつける
+              tear.active = Math.random() < 0.9;
+            }
+          } else if (Math.random() < 0.01) {
+            // 無効な涙が再び有効になる確率
+            tear.active = true;
+            tear.offset = 0;
+          }
+        });
+        
+        // 右側の涙を描画
+        p5.tears.right.forEach((tear, index) => {
+          if (tear.active) {
+            // 涙の位置を少しずつずらす
+            const xOffset = params.eyeSize * 0.2 * (index - 1) + params.eyeSize * 0.3;
+            const yOffset = -params.eyeSize * 0.2;
+            drawTear(
+              p5,
+              p5.width / 2 + params.eyeSpacing + xOffset,
+              p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + yOffset,
+              tear.size,
+              tear.size * 1.5,
+              tear.offset
+            );
+            
+            // 涙を下に移動
+            tear.offset += tear.speed;
+            
+            // 涙が一定距離を超えたらリセット
+            if (tear.offset > params.eyeSize * 1.5) {
+              tear.offset = 0;
+              tear.speed = 0.3 + Math.random() * 0.4;
+              tear.size = params.eyeSize * (0.15 + Math.random() * 0.1);
+              // まれに涙を無効化して変化をつける
+              tear.active = Math.random() < 0.9;
+            }
+          } else if (Math.random() < 0.01) {
+            // 無効な涙が再び有効になる確率
+            tear.active = true;
+            tear.offset = 0;
+          }
+        });
+
         p5.stroke(255);
         break;
     }
     
     // ストロークの設定をリセット
     p5.strokeWeight(1);
+  };
+
+  // 流れる涙を描画する関数
+  const drawAnimatedTears = (p5, params) => {
+    // 涙のサイズを設定
+    const tearSize = params.eyeSize * 0.2;
+    const tearHeight = tearSize * 1.5;
+    
+    // 涙のアニメーション用のパラメータを初期化
+    p5.tearOffsets = p5.tearOffsets || [0, 0]; // 左右の涙のオフセット
+    p5.tearSpeeds = p5.tearSpeeds || [0.5, 0.7]; // 左右の涙の速度
+    p5.tearMaxOffsets = p5.tearMaxOffsets || [params.eyeSize * 1, params.eyeSize * 1]; // 最大の流れる距離
+    
+    // 涙のオフセットを更新
+    p5.tearOffsets[0] += p5.tearSpeeds[0];
+    p5.tearOffsets[1] += p5.tearSpeeds[1];
+    
+    // 涙が最大距離に達したらリセット
+    if (p5.tearOffsets[0] > p5.tearMaxOffsets[0]) {
+      p5.tearOffsets[0] = 0;
+      // 速度をわずかにランダム化
+      p5.tearSpeeds[0] = 0.4 + Math.random() * 0.3;
+    }
+    
+    if (p5.tearOffsets[1] > p5.tearMaxOffsets[1]) {
+      p5.tearOffsets[1] = 0;
+      // 速度をわずかにランダム化
+      p5.tearSpeeds[1] = 0.4 + Math.random() * 0.3;
+    }
+    
+    // 左側の涙
+    drawTear(
+      p5,
+      p5.width / 2 - params.eyeSpacing - params.eyeSize * 0.3,
+      p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
+      tearSize,
+      tearHeight,
+      p5.tearOffsets[0]
+    );
+    
+    // 右側の涙
+    drawTear(
+      p5,
+      p5.width / 2 + params.eyeSpacing + params.eyeSize * 0.3,
+      p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7,
+      tearSize,
+      tearHeight,
+      p5.tearOffsets[1]
+    );
+  };
+
+  // 個々の涙を描画する関数
+  const drawTear = (p5, x, y, size, height, offset) => {
+    p5.fill(255);
+    p5.noStroke();
+    
+    // 涙の本体を描画
+    p5.beginShape();
+    // 涙の左側の曲線
+    p5.vertex(x - size/3, y + offset);
+    p5.bezierVertex(
+      x - size/2, y + height/2 + offset,
+      x + size/2, y + height/2 + offset,
+      x + size/3, y + offset
+    );
+    // 涙の先端（鋭利な上部）
+    p5.vertex(x, y - height/1.5 + offset);
+    p5.endShape(p5.CLOSE);
+    
+    // 涙の周りに薄いグロー効果（オプション）
+    p5.stroke(255, 255, 255, 0);
+    p5.strokeWeight(2);
+    p5.noFill();
+    p5.ellipse(x, y + offset, size * 1.1, height * 0.7);
+    
+    // 描画設定をリセット
+    p5.noStroke();
   };
 
   // キャンバスがリサイズされたときにp5のキャンバスサイズも更新
