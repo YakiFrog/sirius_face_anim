@@ -245,8 +245,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         y: (Math.random() * 2 - 1) * params.eyeRadius
       };
       p5.rightEyeTarget = {
-        x: (Math.random() * 2 - 1) * params.eyeRadius,
-        y: (Math.random() * 2 - 1) * params.eyeRadius
+        x: p5.leftEyeTarget.x,
+        y: p5.leftEyeTarget.y
       };
       
       // 次に瞳を動かすタイミングを設定
@@ -386,26 +386,31 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     // まぶたが閉じている効果を反映した目の高さ
     const visibleEyeHeight = eyeHeight * Math.max(0.1, Math.min(upperLidOpenness, lowerLidOpenness));
     
-    // 1. 白い輪郭を描画
+    // 2. 白目を描画
     p5.stroke(255);
     p5.strokeWeight(outlineWeight);
-    p5.noFill();
-    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, visibleEyeHeight + outlineWeight);
+    p5.fill(255); // 輪郭の中を白で塗りつぶす
+    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.95);
     
-    // 2. 白目を描画
-    p5.fill(255);
-    p5.noStroke();
-    p5.ellipse(0, eyeCenterShift, eyeWidth * 0.95, visibleEyeHeight * 0.95);
-    
-    // 3. 瞳を描画（まぶたの下に配置）
+    // 3. 瞳を描画（まぶたの下に配置）- 瞳は完全な円にする
     p5.fill(0);
     p5.noStroke();
+    const pupilScale = Math.min(upperLidOpenness, lowerLidOpenness) * blinkAmount;
+
+    // 瞳のサイズは縦長にせず、同じサイズで円形に
     p5.ellipse(
       pupilPos.x,
       pupilPos.y + pupilYOffset + eyeCenterShift, 
       pupilSize * 1.5,
-      pupilSize * 1.5 * blinkAmount * Math.min(upperLidOpenness, lowerLidOpenness) * 1.2
+      pupilSize * 1.5 * Math.min(1, pupilScale)
     );
+
+    // 1. 背景の輪郭を白く描画し、内側は塗りつぶさない
+    p5.stroke(255);
+    p5.strokeWeight(outlineWeight * 0);
+    p5.noFill(); // 塗りつぶさない
+    // 白目より約10%大きく
+    p5.ellipse(0, eyeCenterShift, (eyeWidth + outlineWeight) * 1.0, ((visibleEyeHeight + outlineWeight) * 0.95) * 1.0);
     
     // 4. 上まぶたを描画
     if (upperLidOpenness < 1.0) {
@@ -453,28 +458,28 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     
     // 6. まぶたの白い縁を描画 (最後に描画して瞳より上に表示)
     if (upperLidOpenness < 1.0) {
-      const upperLidPosition = eyeCenterShift + upperLidY * 0.7;
+      const upperLidPosition = eyeCenterShift + upperLidY * 0.670;
       
       // 上まぶたの下に白い線を追加
       p5.stroke(255);
       p5.strokeWeight(outlineWeight * 0.7);
       p5.noFill();
       p5.beginShape();
-      for (let x = -eyeWidth/2; x <= eyeWidth/2; x += eyeWidth/15) {
+      for (let x = -eyeWidth/2.3; x <= eyeWidth/2.3; x += eyeWidth/15) {
         p5.vertex(x, upperLidPosition);
       }
       p5.endShape();
     }
     
     if (lowerLidOpenness < 1.0) {
-      const lowerLidPosition = eyeCenterShift + lowerLidY * 0.4;
+      const lowerLidPosition = eyeCenterShift + lowerLidY * 0.375;
       
       // 下まぶたの上に白い線を追加
       p5.stroke(255);
       p5.strokeWeight(outlineWeight * 0.7);
       p5.noFill();
       p5.beginShape();
-      for (let x = -eyeWidth/2; x <= eyeWidth/2; x += eyeWidth/15) {
+      for (let x = -eyeWidth/2.3; x <= eyeWidth/2.3; x += eyeWidth/15) {
         p5.vertex(x, lowerLidPosition);
       }
       p5.endShape();
