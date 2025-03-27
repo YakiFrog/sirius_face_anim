@@ -318,9 +318,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         break;
         
       case 'sad': // 悲しみ
-        eyeAngle = -0.25; // 目尻が上がった悲しい目
-        eyeWidthFactor = 0.9; // 幅を狭める
-        eyeHeightFactor = 0.95; // 縦に狭める
+        eyeAngle = -0.15; // 目尻が上がった悲しい目
         eyeYOffset = params.eyeSize * 0.15; // 下にシフト
         upperEyelid = 0.9; // 上まぶたを少し下げる
         lowerEyelid = 0.9; // 下まぶたを少し上げる
@@ -329,16 +327,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       case 'surprised': // 驚き
         eyeWidthFactor = 1.2; // 目を大きく
         eyeHeightFactor = 1.3; // 目を大きく
-        pupilSizeFactor = 0.8; // 瞳を小さく
+        pupilSizeFactor = 0.9; // 瞳を小さく
         eyeYOffset = -params.eyeSize * 0.1; // 少し上にシフト
         upperEyelid = 1.0; // 完全に開く
         lowerEyelid = 1.0; // 完全に開く
         break;
         
       case 'crying': // 泣き
-        eyeAngle = -0.1; // 目尻が上がった悲しい目
-        eyeWidthFactor = 0.9; // 幅を狭める
-        eyeHeightFactor = 0.9; // 縦に狭める
+        eyeAngle = -0.25; // 目尻が上がった悲しい目
+        eyeWidthFactor = 0.95; // 幅を狭める
+        // eyeHeightFactor = 0.9; // 縦に狭める
+        pupilSizeFactor = 0.9; // 瞳を少し小さく
         eyeYOffset = params.eyeSize * 0.1; // 下にシフト
         upperEyelid = 0.8; // 上まぶたを少し下げる
         lowerEyelid = 0.7; // 下まぶたをより上げる（泣きの表現）
@@ -416,8 +415,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       upperLidPosition = eyeCenterShift + upperLidY * 0.7;
       
       // 黒い上まぶたを描画
-      // p5.fill(255,0,0,100);
       p5.fill(0);
+      // p5.fill(255,0,0,100);
       p5.noStroke();
       p5.beginShape();
       p5.vertex(-eyeWidth * 0.7, -eyeHeight);
@@ -442,8 +441,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       lowerLidPosition = eyeCenterShift + lowerLidY * 0.4;
       
       // 黒い下まぶたを描画
-      // p5.fill(255,0,0,100);
       p5.fill(0);
+      // p5.fill(255,0,0,100);
       p5.noStroke();
       p5.beginShape();
       p5.vertex(-eyeWidth * 0.7, eyeHeight);
@@ -464,7 +463,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     
     // 5. まぶたの白い縁を描画（単純化して自然に）
     p5.stroke(255);
-    p5.strokeWeight(outlineWeight * 0.8); // わずかに太めに
+    p5.strokeWeight(outlineWeight * 1.5); // わずかに太めに
     p5.strokeCap(p5.ROUND); // 線の端を丸く
     
     // 上まぶたの白い縁
@@ -501,7 +500,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     // 目の外側に黒い縁を描画
     p5.noFill();
     p5.stroke(0);
-    p5.strokeWeight(outlineWeight * 4.0);
+    p5.strokeWeight(outlineWeight * 5.0);
     p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight * 3, (visibleEyeHeight + outlineWeight * 3) * 1.0);
     
     // 描画設定をリセット
@@ -541,7 +540,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     // 表情によって口の位置を調整
     switch (expression) {
       case 'neutral':
-        mouthY += params.eyeSize * 0.05;
+        mouthY -= params.eyeSize * 0.06;
         break;
       case 'happy':
         mouthY -= params.eyeSize * 0.27;
@@ -556,48 +555,54 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         mouthY += params.eyeSize * 0.05;
         break;
       case 'crying':
-        mouthY -= params.eyeSize * 0.05;
+        mouthY -= params.eyeSize * 0.1;
         break;
     }
     
     switch (expression) {
       case 'neutral': // なんでもない口
+        // 通常の口
+        const naturalMouthWidth = mouthWidth * 0.8;
         p5.beginShape();
-        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY);
+        p5.vertex(p5.width / 2 - naturalMouthWidth / 2, mouthY);
         p5.bezierVertex(
-          p5.width / 2 - mouthWidth / 4, 
+          p5.width / 2 - naturalMouthWidth / 4,
           mouthY + mouthHeight * 0.6, 
-          p5.width / 2 + mouthWidth / 4, 
+          p5.width / 2 + naturalMouthWidth / 4, 
           mouthY + mouthHeight * 0.6, 
-          p5.width / 2 + mouthWidth / 2, 
+          p5.width / 2 + naturalMouthWidth / 2, 
           mouthY
         );
         p5.endShape();
         break;
         
       case 'happy': // 笑顔
+        // 笑顔の場合は口の横幅を約20%小さくする
+        const happyMouthWidth = mouthWidth * 0.8;
         p5.beginShape();
-        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY);
+        p5.vertex(p5.width / 2 - happyMouthWidth / 2, mouthY);
         p5.bezierVertex(
-          p5.width / 2 - mouthWidth / 4, 
+          p5.width / 2 - happyMouthWidth / 4, 
           mouthY + mouthHeight * 1.2, 
-          p5.width / 2 + mouthWidth / 4, 
+          p5.width / 2 + happyMouthWidth / 4, 
           mouthY + mouthHeight * 1.2, 
-          p5.width / 2 + mouthWidth / 2, 
+          p5.width / 2 + happyMouthWidth / 2, 
           mouthY
         );
         p5.endShape();
         break;
         
       case 'angry': // 怒り
+        // 口の横幅を約25%小さくする
+        const angryMouthWidth = mouthWidth * 0.75;
         p5.beginShape();
-        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY + mouthHeight * 0.5);
+        p5.vertex(p5.width / 2 - angryMouthWidth / 2, mouthY + mouthHeight * 0.5);
         p5.bezierVertex(
-          p5.width / 2 - mouthWidth / 4, 
+          p5.width / 2 - angryMouthWidth / 4, 
           mouthY - mouthHeight * 0.3, 
-          p5.width / 2 + mouthWidth / 4, 
+          p5.width / 2 + angryMouthWidth / 4, 
           mouthY - mouthHeight * 0.3, 
-          p5.width / 2 + mouthWidth / 2, 
+          p5.width / 2 + angryMouthWidth / 2, 
           mouthY + mouthHeight * 0.5
         );
         p5.endShape();
@@ -605,13 +610,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         
       case 'sad': // 悲しみ
         p5.beginShape();
-        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY - mouthHeight * 0.3);
+        // 口の横幅を約25%小さくする
+        const sadMouthWidth = mouthWidth * 0.75;
+        p5.vertex(p5.width / 2 - sadMouthWidth / 2, mouthY - mouthHeight * 0.3);
         p5.bezierVertex(
-          p5.width / 2 - mouthWidth / 4, 
+          p5.width / 2 - sadMouthWidth / 4, 
           mouthY - mouthHeight * 0.8, 
-          p5.width / 2 + mouthWidth / 4, 
+          p5.width / 2 + sadMouthWidth / 4, 
           mouthY - mouthHeight * 0.8, 
-          p5.width / 2 + mouthWidth / 2, 
+          p5.width / 2 + sadMouthWidth / 2, 
           mouthY - mouthHeight * 0.3
         );
         p5.endShape();
@@ -621,7 +628,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         // 縦長の丸い口（驚きを表現）
         p5.beginShape();
         const surprisedMouthWidth = mouthWidth * 0.35;
-        const surprisedMouthHeight = mouthHeight * 2.0;
+        const surprisedMouthHeight = mouthHeight * 2.5;
         
         // 上半分の曲線
         p5.vertex(p5.width / 2 - surprisedMouthWidth / 2, mouthY);
@@ -644,13 +651,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       case 'crying': // 泣き
         // 悲しい口
         p5.beginShape();
-        p5.vertex(p5.width / 2 - mouthWidth / 2, mouthY - mouthHeight * 0.3);
+        // 口の横幅を約25%小さくする
+        const cryingMouthWidth = mouthWidth * 0.75;
+        p5.vertex(p5.width / 2 - cryingMouthWidth / 2, mouthY - mouthHeight * 0.3);
         p5.bezierVertex(
-          p5.width / 2 - mouthWidth / 4, 
+          p5.width / 2 - cryingMouthWidth / 4, 
           mouthY - mouthHeight * 0.8, 
-          p5.width / 2 + mouthWidth / 4, 
+          p5.width / 2 + cryingMouthWidth / 4, 
           mouthY - mouthHeight * 0.8, 
-          p5.width / 2 + mouthWidth / 2, 
+          p5.width / 2 + cryingMouthWidth / 2, 
           mouthY - mouthHeight * 0.3
         );
         p5.endShape();
@@ -689,7 +698,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
           if (tear.active) {
             // 涙の位置を少しずつずらす - より上側に配置
             const xOffset = params.eyeSize * 0.2 * (index - 1) - params.eyeSize * 0.3;
-            const yOffset = -params.eyeSize * 0.2;
+            const yOffset = -params.eyeSize * 0.1;
             drawTear(
               p5,
               p5.width / 2 - params.eyeSpacing + xOffset,
@@ -730,7 +739,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
           if (tear.active) {
             // 涙の位置を少しずつずらす
             const xOffset = params.eyeSize * 0.2 * (index - 1) + params.eyeSize * 0.3;
-            const yOffset = -params.eyeSize * 0.2;
+            const yOffset = -params.eyeSize * 0.1;
             drawTear(
               p5,
               p5.width / 2 + params.eyeSpacing + xOffset,
