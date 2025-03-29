@@ -588,7 +588,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         mouthY += params.eyeSize * 0.15;
         break;
       case 'surprised':
-        mouthY += params.eyeSize * 0.25;
+        mouthY += params.eyeSize * 0.15;
         break;
       case 'crying':
         mouthY += params.eyeSize * 0.15;
