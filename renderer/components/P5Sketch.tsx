@@ -552,6 +552,45 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       noseWidth,    // 横幅
       noseHeight    // 縦幅
     );
+    
+    // 人中（鼻から口までの溝）を描画
+    const philtrumLength = params.eyeYOffset * 1.3; // 人中の長さ
+    const philtrumWidth = params.eyeSize * 0.05; // 人中の幅
+    const mouthY = p5.height / 2 + params.eyeYOffset * 1.1; // 口のY位置
+    
+    // 表情に応じて人中の長さや位置を調整
+    let adjustedPhiltrumLength = philtrumLength;
+    switch (expression) {
+      case 'happy':
+        adjustedPhiltrumLength *= 1.2;
+        break;
+      case 'angry':
+        adjustedPhiltrumLength *= 0.8;
+        break;
+      case 'sad':
+        adjustedPhiltrumLength *= 0.8;
+        break;
+      case 'surprised':
+        adjustedPhiltrumLength *= 1.5;
+        break;
+      case 'crying':
+        adjustedPhiltrumLength *= 0.8;
+        break;
+    }
+    
+    // 人中を白い線で描画
+    p5.stroke(255);
+    p5.strokeWeight(philtrumWidth * scaleFactorRef.current);
+    p5.noFill();
+    p5.line(
+      p5.width / 2,                  // 鼻の下のX座標
+      noseY + noseHeight/2,          // 鼻の下のY座標
+      p5.width / 2,                  // 口の上のX座標
+      noseY + adjustedPhiltrumLength // 口の上のY座標
+    );
+    
+    // 描画設定をリセット
+    p5.noStroke();
   };
 
   // 口を描画する関数
