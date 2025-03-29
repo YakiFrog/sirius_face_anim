@@ -344,7 +344,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         eyeAngle = -0.25; // 目尻が上がった悲しい目
         pupilSizeFactor = 0.9; // 瞳を少し小さく
         eyeYOffset = params.eyeSize * 0.1; // 下にシフト
-        upperEyelid = 0.8; // 上まぶたを少し下げる
+        upperEyelid = 0.7; // 上まぶたを少し下げる
         lowerEyelid = 0.9; // 下まぶたをより上げる（泣きの表現）
         break;
     }
