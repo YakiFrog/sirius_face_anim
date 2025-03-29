@@ -17,6 +17,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   const containerRef = useRef<HTMLDivElement>(null);
   const [cursorVisible, setCursorVisible] = useState(true);
   const mouseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isPipMode, setIsPipMode] = useState(false);
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -151,7 +154,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   // p5のsetup関数 - キャンバスの作成をシンプルに
   const setup = (p5, canvasParentRef) => {
     // シンプルにキャンバスを作成するだけ
-    p5.createCanvas(dimensions.width, dimensions.height).parent(canvasParentRef);
+    const canvas = p5.createCanvas(dimensions.width, dimensions.height).parent(canvasParentRef);
+    canvasRef.current = canvas.elt; // canvasの参照を保存
   };
 
   // p5のdraw関数 - 明示的に色指定
@@ -522,19 +526,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     p5.noFill();
     p5.strokeWeight(strokeWeight);
     
-    // キーボード入力処理を追加
+    // キーボード入力処理を更新
     p5.keyPressed = () => {
-      if (p5.key >= '1' && p5.key <= '6') {
-        const expressionMap: Record<string, FacialExpression> = {
-          '1': 'neutral',
-          '2': 'happy',
-          '3': 'angry',
-          '4': 'sad',
-          '5': 'surprised',
-          '6': 'crying'
-        };
-        setExpression(expressionMap[p5.key]);
-      }
+      handleKeyPress(p5);
     };
 
     // 表情によって口の位置を調整
@@ -867,6 +861,71 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     }
   };
 
+  // キーボード入力処理を追加
+  const handleKeyPress = (p5) => {
+    if (p5.key >= '1' && p5.key <= '6') {
+      const expressionMap: Record<string, FacialExpression> = {
+        '1': 'neutral',
+        '2': 'happy',
+        '3': 'angry',
+        '4': 'sad',
+        '5': 'surprised',
+        '6': 'crying'
+      };
+      setExpression(expressionMap[p5.key]);
+    } else if (p5.key === 'p' || p5.key === 'P') {
+      // Pキーでピクチャーインピクチャーモードの切り替え
+      togglePictureInPicture();
+    }
+  };
+
+  // ピクチャーインピクチャーモード切り替え
+  const togglePictureInPicture = async () => {
+    if (!canvasRef.current) return;
+    
+    try {
+      // ブラウザがPiPをサポートしているか確認
+      if (!document.pictureInPictureEnabled) {
+        console.error('Picture-in-Picture is not supported in this browser');
+        return;
+      }
+      
+      // まだビデオ要素がない場合は作成
+      if (!videoRef.current) {
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;
+        video.width = dimensions.width;
+        video.height = dimensions.height;
+        video.style.display = 'none';
+        document.body.appendChild(video);
+        videoRef.current = video;
+        
+        // キャンバスからストリームを取得
+        const stream = canvasRef.current.captureStream(30);
+        video.srcObject = stream;
+        await video.play();
+      }
+      
+      // PiPのトグル
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        setIsPipMode(false);
+      } else {
+        await videoRef.current.requestPictureInPicture();
+        setIsPipMode(true);
+        
+        // PiPが終了したときの処理
+        videoRef.current.addEventListener('leavepictureinpicture', () => {
+          setIsPipMode(false);
+        }, { once: true });
+      }
+    } catch (error) {
+      console.error('Error toggling Picture-in-Picture mode:', error);
+    }
+  };
+
   // コンテナのスタイルを修正 - シンプルに
   const sketchStyle = {
     width: '100%',
@@ -881,6 +940,27 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   return (
     <div ref={containerRef} style={sketchStyle}>
       <Sketch setup={setup} draw={draw} windowResized={windowResized} />
+      
+      {/* PiP切り替えボタン */}
+      <button 
+        onClick={togglePictureInPicture}
+        style={{
+          position: 'absolute',
+          bottom: '20px',
+          right: '20px',
+          padding: '8px 12px',
+          background: 'rgba(0, 0, 0, 0.5)',
+          color: 'white',
+          border: '1px solid white',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          zIndex: 10,
+          opacity: cursorVisible ? 0.7 : 0,
+          transition: 'opacity 0.3s ease'
+        }}
+      >
+        {isPipMode ? 'PiP終了' : 'PiP開始'}
+      </button>
     </div>
   );
 };
