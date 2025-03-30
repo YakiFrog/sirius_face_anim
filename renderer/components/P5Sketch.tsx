@@ -10,9 +10,15 @@ interface P5SketchProps {
   fullScreen?: boolean;
   width?: number;
   height?: number;
+  eyeSpacingFactor?: number; // 目の間隔を調整するためのプロパティを追加
 }
 
-export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 400, height = 400 }) => {
+export const P5Sketch: React.FC<P5SketchProps> = ({ 
+  fullScreen = false, 
+  width = 400, 
+  height = 400,
+  eyeSpacingFactor = 1.0 // デフォルト値として1.0を設定
+}) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -20,6 +26,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isPipMode, setIsPipMode] = useState(false);
+  const [currentEyeSpacingFactor, setCurrentEyeSpacingFactor] = useState(eyeSpacingFactor); // 目の間隔係数をステートで管理
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -76,17 +83,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     }
   }, [fullScreen]);
 
-  // 表情切り替え用のタイマーを設定
-  // useEffect(() => {
-  //   const changeExpression = () => {
-  //     const expressions: FacialExpression[] = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying'];
-  //     const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
-  //     setExpression(randomExpression);
-  //   };
-    
-  //   const timer = setInterval(changeExpression, 5000 + Math.random() * 5000);
-  //   return () => clearInterval(timer);
-  // }, []);
+  useEffect(() => {
+    setCurrentEyeSpacingFactor(eyeSpacingFactor); // 親コンポーネントから変更を反映
+  }, [eyeSpacingFactor]);
 
   // マウスの動きを監視して一定時間後にポインタを非表示にする
   useEffect(() => {
@@ -190,11 +189,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     const basePupilSize = baseEyeSize / 2.3;
     const baseEyeYOffset = baseHeight / 8;
     
+    // 目の間隔と大きさの調整係数
+    const eyeSizeFactor = 1.2;     // 目の大きさ調整係数: 1.0が標準、大きくするなら>1.0、小さくするなら<1.0
+    const eyeSpacingFactor = 1.1;  // 目の間隔調整係数
+    
     // 現在のスケールに合わせて調整
     const scale = scaleFactorRef.current;
-    const eyeSize = baseEyeSize * scale;
-    const eyeSpacing = baseEyeSpacing * scale;
-    const pupilSize = basePupilSize * scale;
+    const eyeSize = baseEyeSize * scale * eyeSizeFactor;  // 目の大きさに係数を適用
+    const eyeSpacing = baseEyeSpacing * scale * eyeSpacingFactor;  // 目の間隔に係数を適用
+    const pupilSize = basePupilSize * scale * eyeSizeFactor;  // 瞳のサイズも目の大きさに合わせて調整
     const eyeYOffset = baseEyeYOffset * scale;
     const eyeRadius = (baseEyeSize / 10) * scale; // 瞳が動ける範囲
     
@@ -207,7 +210,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       eyeRadius
     };
   };
-  
+
   // 瞬きの状態を更新する関数
   const updateBlinkState = (p5, params) => {
     // 瞬きの状態に応じた係数を計算
@@ -519,8 +522,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
     const noseWidth = params.eyeSize * 0.35;
     const noseHeight = params.eyeSize * 0.2;
     
-    // 鼻の基本位置 (目と口の間)
-    let noseY = p5.height / 2 + params.eyeYOffset * 0.15;
+    // 鼻の基本位置 (目と口の間) - 目の大きさに比例するように調整
+    let noseY = p5.height / 2 + params.eyeYOffset * 0.15 + params.eyeSize * 0.1;
     
     // 表情に応じて鼻の位置を調整
     switch (expression) {
@@ -578,16 +581,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
         break;
     }
     
-    // 人中を白い線で描画
-    p5.stroke(255);
-    p5.strokeWeight(philtrumWidth * scaleFactorRef.current);
-    p5.noFill();
-    p5.line(
-      p5.width / 2,                  // 鼻の下のX座標
-      noseY + noseHeight/2,          // 鼻の下のY座標
-      p5.width / 2,                  // 口の上のX座標
-      noseY + adjustedPhiltrumLength // 口の上のY座標
-    );
+    // // 人中を白い線で描画
+    // p5.stroke(255);
+    // p5.strokeWeight(philtrumWidth * scaleFactorRef.current);
+    // p5.noFill();
+    // p5.line(
+    //   p5.width / 2,                  // 鼻の下のX座標
+    //   noseY + noseHeight/2,          // 鼻の下のY座標
+    //   p5.width / 2,                  // 口の上のX座標
+    //   noseY + adjustedPhiltrumLength // 口の上のY座標
+    // );
     
     // 描画設定をリセット
     p5.noStroke();
@@ -597,7 +600,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
   const drawMouth = (p5: any, params: any) => {
     const mouthWidth = params.eyeSize * 1.5;
     const mouthHeight = params.eyeSize * 0.4;
-    let mouthY = p5.height / 2 + params.eyeYOffset * 1.1;
+    
+    // 口の基本位置 - 目の大きさに比例するように調整
+    let mouthY = p5.height / 2 + params.eyeYOffset * 1.1 + params.eyeSize * 0.1;
     
     // 線の太さもスケールに合わせる
     const strokeWeight = 40 * scaleFactorRef.current;
@@ -1051,6 +1056,52 @@ export const P5Sketch: React.FC<P5SketchProps> = ({ fullScreen = false, width = 
       >
         {isPipMode ? 'PiP終了' : 'PiP開始'}
       </button>
+
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          padding: '8px 12px',
+          background: 'rgba(0, 0, 0, 0.5)',
+          color: 'white',
+          borderRadius: '4px',
+          zIndex: 10,
+          opacity: cursorVisible ? 0.7 : 0,
+          transition: 'opacity 0.3s ease'
+        }}
+      >
+        <div>目の間隔: {Math.round(currentEyeSpacingFactor * 100)}%</div>
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px' }}>
+          <button
+            onClick={() => setCurrentEyeSpacingFactor(prev => Math.max(0.5, prev - 0.1))}
+            style={{ padding: '4px 8px', marginRight: '8px', cursor: 'pointer' }}
+          >
+            -
+          </button>
+          <input
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.1"
+            value={currentEyeSpacingFactor}
+            onChange={(e) => setCurrentEyeSpacingFactor(parseFloat(e.target.value))}
+            style={{ width: '100px' }}
+          />
+          <button
+            onClick={() => setCurrentEyeSpacingFactor(prev => Math.min(2.0, prev + 0.1))}
+            style={{ padding: '4px 8px', marginLeft: '8px', cursor: 'pointer' }}
+          >
+            +
+          </button>
+          <button
+            onClick={() => setCurrentEyeSpacingFactor(1.0)}
+            style={{ padding: '4px 8px', marginLeft: '8px', cursor: 'pointer' }}
+          >
+            リセット
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
