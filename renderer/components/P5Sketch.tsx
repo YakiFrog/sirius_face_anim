@@ -11,13 +11,18 @@ interface P5SketchProps {
   width?: number;
   height?: number;
   eyeSpacingFactor?: number; // 目の間隔を調整するためのプロパティを追加
+  // ROS2接続のための追加プロパティ
+  enableRos2Connection?: boolean;
+  ros2WebSocketUrl?: string;
 }
 
 export const P5Sketch: React.FC<P5SketchProps> = ({ 
   fullScreen = false, 
   width = 400, 
   height = 400,
-  eyeSpacingFactor = 1.0 // デフォルト値として1.0を設定
+  eyeSpacingFactor = 1.0, // デフォルト値として1.0を設定
+  enableRos2Connection = false, // ROS2接続を有効にするかどうか
+  ros2WebSocketUrl = 'ws://localhost:9090' // WebSocketのURL
 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,6 +32,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isPipMode, setIsPipMode] = useState(false);
   const [currentEyeSpacingFactor, setCurrentEyeSpacingFactor] = useState(eyeSpacingFactor); // 目の間隔係数をステートで管理
+  
+  // WebSocket接続のためのRef
+  const websocketRef = useRef<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('切断');
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -54,11 +65,95 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   });
   
   // 表情の種類
-  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying';
+  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt';
   // 表情を状態で保持
   const [expression, setExpression] = useState<FacialExpression>('neutral');
   const prevExpressionRef = useRef<FacialExpression>('neutral');
   
+  // タップ/クリック反応のための状態
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const tapPositionRef = useRef({ x: 0, y: 0 });
+
+  // WebSocket接続の初期化と再接続管理
+  useEffect(() => {
+    // ROS2接続が有効な場合のみWebSocketを接続
+    if (!enableRos2Connection) {
+      return;
+    }
+
+    const connectWebSocket = () => {
+      try {
+        // ブラウザ環境でのみWebSocketを作成
+        if (typeof window !== 'undefined') {
+          const ws = new WebSocket(ros2WebSocketUrl);
+          
+          ws.onopen = () => {
+            console.log('WebSocket接続成功');
+            setIsConnected(true);
+            setConnectionStatus('接続中');
+          };
+          
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              // 有効な表情タイプであれば設定
+              if (data.expression && isValidExpression(data.expression)) {
+                setExpression(data.expression as FacialExpression);
+                console.log(`表情を${data.expression}に変更しました`);
+              }
+            } catch (error) {
+              console.error('メッセージの処理中にエラーが発生しました:', error);
+            }
+          };
+          
+          ws.onclose = () => {
+            console.log('WebSocket接続が閉じられました');
+            setIsConnected(false);
+            setConnectionStatus('切断');
+            
+            // 再接続のスケジュール
+            if (reconnectTimerRef.current) {
+              clearTimeout(reconnectTimerRef.current);
+            }
+            reconnectTimerRef.current = setTimeout(() => {
+              console.log('WebSocketに再接続を試みています...');
+              connectWebSocket();
+            }, 5000); // 5秒後に再接続
+          };
+          
+          ws.onerror = (error) => {
+            console.error('WebSocketエラー:', error);
+            setConnectionStatus('エラー');
+          };
+          
+          websocketRef.current = ws;
+        }
+      } catch (error) {
+        console.error('WebSocket接続エラー:', error);
+        setConnectionStatus('エラー');
+      }
+    };
+    
+    // 表情が有効かどうかをチェックする関数
+    const isValidExpression = (exp: string): boolean => {
+      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt'].includes(exp);
+    };
+    
+    // WebSocket接続を開始
+    connectWebSocket();
+    
+    // クリーンアップ
+    return () => {
+      if (websocketRef.current) {
+        websocketRef.current.close();
+      }
+      
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, [enableRos2Connection, ros2WebSocketUrl]);
+
   // リサイズ関連の処理
   useEffect(() => {
     if (fullScreen) {
@@ -188,6 +283,35 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // シンプルにキャンバスを作成するだけ
     const canvas = p5.createCanvas(dimensions.width, dimensions.height).parent(canvasParentRef);
     canvasRef.current = canvas.elt; // canvasの参照を保存
+    
+    // タップ（クリック）イベントの追加
+    canvas.elt.addEventListener('click', handleTap);
+    canvas.elt.addEventListener('touchend', handleTap);
+  };
+
+  // タップ（クリック）イベントのハンドラ
+  const handleTap = (event) => {
+    // タップ位置を記録（タッチイベントとクリックイベントの両方に対応）
+    const touchEvent = event.touches ? event.touches[0] : event;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    // Canvas内での相対座標を計算
+    const x = touchEvent.clientX - rect.left;
+    const y = touchEvent.clientY - rect.top;
+    
+    tapPositionRef.current = { x, y };
+    
+    // 痛がる表情に変更
+    setExpression('hurt');
+    
+    // 1秒後に元の表情に戻す
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+    }
+    tapTimeoutRef.current = setTimeout(() => {
+      setExpression('neutral');
+    }, 1000);
   };
 
   // p5のdraw関数 - 明示的に色指定
@@ -209,9 +333,6 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // 両目を描画
     drawEyes(p5, eyeParams);
-
-    // 鼻を描画 (新規追加)
-    // drawNose(p5, eyeParams);
 
     // 口を描画
     drawMouth(p5, eyeParams);
@@ -294,11 +415,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           jumpX = Math.sin(expressionAnim.intensity * Math.PI * 8) * 3 * scaleFactorRef.current;
           break;
           
-        default:
-          // 通常表情は控えめな動き
+        case 'hurt':
+          // 痛がる表情は激しく震える
           jumpHeight = scaleFactorRef.current * 
             (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
-            15; // 高さ係数15（標準）
+            18; // 高さ係数18
+          jumpX = Math.sin(expressionAnim.intensity * Math.PI * 12) * 9 * scaleFactorRef.current;
+          break;
       }
       
       // 通常の頭の動きに表情アニメーションの効果を加える
@@ -501,6 +624,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         eyeYOffset = params.eyeSize * 0.1; // 下にシフト
         upperEyelid = 0.7; // 上まぶたを少し下げる
         lowerEyelid = 0.9; // 下まぶたをより上げる（泣きの表現）
+        break;
+        
+      case 'hurt': // 痛がる表情
+        eyeAngle = 0.25; // 目尻が下がった痛がる目
+        eyeWidthFactor = 0.85; // 目を少し小さく
+        eyeYOffset = params.eyeSize * 0.10; // 下にシフト
+        upperEyelid = 0.55; // 上まぶたをかなり下げる
+        lowerEyelid = 0.5; // 下まぶたを上げる
+        pupilSizeFactor = 0.8; // 瞳を小さく
         break;
     }
     
@@ -789,6 +921,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'crying':
         mouthY += params.eyeSize * 0.15;
         break;
+      case 'hurt':
+        mouthY -= params.eyeSize * 0.06;
+        break;
     }
     
     switch (expression) {
@@ -1018,6 +1153,41 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
         p5.stroke(255);
         break;
+        
+      case 'hurt': // 痛がる表情
+        // 痛がるような形の口（より多くの波形）
+        const hurtMouthWidth = mouthWidth * 0.6; // より小さい口
+        
+        // より複雑な波形の口を描画
+        p5.beginShape();
+        p5.noFill();
+        
+        // 開始点
+        p5.vertex(p5.width / 2 - hurtMouthWidth / 2, mouthY);
+        
+        // より多くの波を作成（5つの波形）
+        const waveCount = 5;
+        const segmentWidth = hurtMouthWidth / waveCount;
+        
+        for (let i = 0; i < waveCount; i++) {
+          const startX = p5.width / 2 - hurtMouthWidth / 2 + i * segmentWidth;
+          const endX = startX + segmentWidth;
+          const centerX = startX + segmentWidth / 2;
+          
+          // 波の高さを交互に変える（高さを小さく調整）
+          const waveHeight = (i % 2 === 0) ? mouthHeight * 0.15 : -mouthHeight * 0.1;
+          const controlHeight = (i % 2 === 0) ? mouthHeight * 0.25 : -mouthHeight * 0.2;
+          
+          // ベジェ曲線で滑らかな波を作成
+          p5.bezierVertex(
+            startX + segmentWidth * 0.35, mouthY + controlHeight,
+            startX + segmentWidth * 0.7, mouthY + controlHeight,
+            endX, mouthY + (i === waveCount - 1 ? 0 : waveHeight)
+          );
+        }
+        
+        p5.endShape();
+        break;
     }
     
     // ストロークの設定をリセット
@@ -1110,14 +1280,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // キーボード入力処理を追加
   const handleKeyPress = (p5) => {
-    if (p5.key >= '1' && p5.key <= '6') {
+    if (p5.key >= '1' && p5.key <= '7') {
       const expressionMap: Record<string, FacialExpression> = {
         '1': 'neutral',
         '2': 'happy',
         '3': 'angry',
         '4': 'sad',
         '5': 'surprised',
-        '6': 'crying'
+        '6': 'crying',
+        '7': 'hurt'
       };
       setExpression(expressionMap[p5.key]);
     } else if (p5.key === 'p' || p5.key === 'P') {
@@ -1187,73 +1358,6 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   return (
     <div ref={containerRef} style={sketchStyle}>
       <Sketch setup={setup} draw={draw} windowResized={windowResized} />
-      
-      {/* PiP切り替えボタン */}
-      <button 
-        onClick={togglePictureInPicture}
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          padding: '8px 12px',
-          background: 'rgba(0, 0, 0, 0.5)',
-          color: 'white',
-          border: '1px solid white',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          zIndex: 10,
-          opacity: cursorVisible ? 0.7 : 0,
-          transition: 'opacity 0.3s ease'
-        }}
-      >
-        {isPipMode ? 'PiP終了' : 'PiP開始'}
-      </button>
-
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          padding: '8px 12px',
-          background: 'rgba(0, 0, 0, 0.5)',
-          color: 'white',
-          borderRadius: '4px',
-          zIndex: 10,
-          opacity: cursorVisible ? 0.7 : 0,
-          transition: 'opacity 0.3s ease'
-        }}
-      >
-        <div>目の間隔: {Math.round(currentEyeSpacingFactor * 100)}%</div>
-        <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px' }}>
-          <button
-            onClick={() => setCurrentEyeSpacingFactor(prev => Math.max(0.5, prev - 0.1))}
-            style={{ padding: '4px 8px', marginRight: '8px', cursor: 'pointer' }}
-          >
-            -
-          </button>
-          <input
-            type="range"
-            min="0.5"
-            max="2.0"
-            step="0.1"
-            value={currentEyeSpacingFactor}
-            onChange={(e) => setCurrentEyeSpacingFactor(parseFloat(e.target.value))}
-            style={{ width: '100px' }}
-          />
-          <button
-            onClick={() => setCurrentEyeSpacingFactor(prev => Math.min(2.0, prev + 0.1))}
-            style={{ padding: '4px 8px', marginLeft: '8px', cursor: 'pointer' }}
-          >
-            +
-          </button>
-          <button
-            onClick={() => setCurrentEyeSpacingFactor(1.0)}
-            style={{ padding: '4px 8px', marginLeft: '8px', cursor: 'pointer' }}
-          >
-            リセット
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
