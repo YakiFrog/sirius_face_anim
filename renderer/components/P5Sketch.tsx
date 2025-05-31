@@ -40,10 +40,24 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // 瞬き用のrefをトップレベルで宣言
   const blinkRef = useRef(1); // 1: 完全に開いた状態、0.25: 最も閉じた状態
   
+  // 頭の動きのための状態
+  const headMovementRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0, timer: 0 });
+  
+  // 表情変更アニメーションのための状態
+  const expressionAnimRef = useRef({ 
+    active: false, 
+    timer: 0,
+    intensity: 0, 
+    direction: 1, 
+    jumpCount: 0,
+    maxJumps: 0
+  });
+  
   // 表情の種類
   type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying';
   // 表情を状態で保持
   const [expression, setExpression] = useState<FacialExpression>('neutral');
+  const prevExpressionRef = useRef<FacialExpression>('neutral');
   
   // リサイズ関連の処理
   useEffect(() => {
@@ -150,6 +164,25 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
   }, []);
 
+  // 表情が変更されたときのエフェクトを追加
+  useEffect(() => {
+    // 表情が変わったら、前の表情を保存し、アニメーションを開始
+    if (expression !== prevExpressionRef.current) {
+      // 前回の表情を記録
+      prevExpressionRef.current = expression;
+      
+      // ぴょんぴょん効果のアニメーション開始
+      const expressionAnim = expressionAnimRef.current;
+      expressionAnim.active = true;
+      expressionAnim.intensity = 0;
+      expressionAnim.direction = 1;
+      expressionAnim.jumpCount = 0;
+      
+      // すべての表情でジャンプ回数を1回に統一
+      expressionAnim.maxJumps = 1;
+    }
+  }, [expression]);
+  
   // p5のsetup関数 - キャンバスの作成をシンプルに
   const setup = (p5, canvasParentRef) => {
     // シンプルにキャンバスを作成するだけ
@@ -161,6 +194,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const draw = (p5) => {
     // 背景を黒で塗りつぶす
     p5.background(0, 0, 0);
+    
+    // 頭の動きを更新
+    updateHeadMovement(p5);
     
     // 目を描画するための各種パラメータを計算
     const eyeParams = calculateEyeParameters(p5);
@@ -175,23 +211,139 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     drawEyes(p5, eyeParams);
 
     // 鼻を描画 (新規追加)
-    drawNose(p5, eyeParams);
+    // drawNose(p5, eyeParams);
 
     // 口を描画
     drawMouth(p5, eyeParams);
+    
+    // 頭の動きをリセット（重要：pushを使用したら、必ずpopでリセットする）
+    p5.pop();
+  };
+
+  // 頭の動きを更新する関数
+  const updateHeadMovement = (p5) => {
+    const headMovement = headMovementRef.current;
+    const expressionAnim = expressionAnimRef.current;
+    
+    // 表情変更のぴょんぴょんアニメーション処理
+    if (expressionAnim.active) {
+      // ジャンプのパターンを作成（上下に動く）
+      if (expressionAnim.direction > 0) {
+        // 上に動く
+        expressionAnim.intensity += 0.08;
+        if (expressionAnim.intensity > 1) {
+          expressionAnim.direction = -1; // 下に方向転換
+        }
+      } else {
+        // 下に動く
+        expressionAnim.intensity -= 0.12;
+        if (expressionAnim.intensity < 0) {
+          expressionAnim.intensity = 0;
+          expressionAnim.jumpCount++;
+          
+          // 設定された回数ジャンプしたらアニメーションを終了
+          if (expressionAnim.jumpCount >= expressionAnim.maxJumps) {
+            expressionAnim.active = false;
+          } else {
+            // 次のジャンプを開始
+            expressionAnim.direction = 1;
+          }
+        }
+      }
+      
+      // ジャンプの高さと横の動きを表情ごとに調整
+      let jumpHeight = 0;
+      let jumpX = 0;
+      
+      switch (expression) {
+        case 'happy':
+          // 喜びは高く大きく跳ねる
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            30; // 高さ係数30（大きい）
+          break;
+        
+        case 'surprised':
+          // 驚きは中くらいの高さで左右にも揺れる
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            25; // 高さ係数25（中くらい）
+          jumpX = Math.sin(expressionAnim.intensity * Math.PI * 2) * 8 * scaleFactorRef.current;
+          break;
+        
+        case 'angry':
+          // 怒りは低めだが素早く左右に振動
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            15; // 高さ係数15（低め）
+          jumpX = Math.sin(expressionAnim.intensity * Math.PI * 5) * 6 * scaleFactorRef.current;
+          break;
+          
+        case 'sad':
+          // 悲しみは小さく沈むような動き
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            10; // 高さ係数10（低い）
+          break;
+          
+        case 'crying':
+          // 泣きはさらに小さく震えるような動き
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            12; // 高さ係数12（やや低い）
+          jumpX = Math.sin(expressionAnim.intensity * Math.PI * 8) * 3 * scaleFactorRef.current;
+          break;
+          
+        default:
+          // 通常表情は控えめな動き
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            15; // 高さ係数15（標準）
+      }
+      
+      // 通常の頭の動きに表情アニメーションの効果を加える
+      p5.push();
+      p5.translate(headMovement.x + jumpX, headMovement.y - jumpHeight);
+      return;
+    }
+    
+    // 以下、通常の頭の動き処理
+    headMovement.timer -= 1;
+    if (headMovement.timer <= 0) {
+      // 新しい目標位置を設定（適度な範囲内でランダム）- 可動範囲をさらに狭める
+      const moveRange = scaleFactorRef.current * 1.5; // 元は3、1.5に縮小
+      headMovement.targetX = (Math.random() * 2 - 1) * moveRange;
+      headMovement.targetY = (Math.random() * 2 - 1) * moveRange;
+      
+      // 次の動きまでの時間をランダムに設定 - さらに長めに設定
+      headMovement.timer = Math.floor(Math.random() * 240) + 180; // 180〜420フレーム（約3〜7秒）
+    }
+    
+    // イージングで現在位置を目標位置に近づける - より緩やかに
+    const easing = 0.01; // 元は0.02、0.01に縮小
+    headMovement.x += (headMovement.targetX - headMovement.x) * easing;
+    headMovement.y += (headMovement.targetY - headMovement.y) * easing;
+    
+    // わずかなランダムな揺れを加える（呼吸のような効果）- さらに効果を小さく
+    const breathingEffect = Math.sin(p5.frameCount * 0.008) * scaleFactorRef.current * 0.5; // 振幅をさらに半分に
+    headMovement.y += breathingEffect;
+
+    // キャンバス全体をシフト（頭の動きを表現）
+    p5.push();
+    p5.translate(headMovement.x, headMovement.y);
   };
 
   // 目のパラメータを計算する関数
   const calculateEyeParameters = (p5) => {
     // 基準値を設定（基準解像度での値）
     const baseEyeSize = baseWidth / 4.5;  // 基準解像度でのサイズ
-    const baseEyeSpacing = baseEyeSize * 0.95;
+    const baseEyeSpacing = baseEyeSize * 1;
     const basePupilSize = baseEyeSize / 2.3;
     const baseEyeYOffset = baseHeight / 8;
     
     // 目の間隔と大きさの調整係数
     const eyeSizeFactor = 1.2;     // 目の大きさ調整係数: 1.0が標準、大きくするなら>1.0、小さくするなら<1.0
-    const eyeSpacingFactor = 1.1;  // 目の間隔調整係数
+    const eyeSpacingFactor = currentEyeSpacingFactor;  // 目の間隔調整係数（ステートから取得）
     
     // 現在のスケールに合わせて調整
     const scale = scaleFactorRef.current;
