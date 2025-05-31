@@ -4,7 +4,7 @@ import Head from 'next/head'
 import { P5Sketch } from '../components/P5Sketch'
 
 export default function HomePage() {
-  const [enableRos2Connection, setEnableRos2Connection] = useState(false);
+  const [enableRos2Connection, setEnableRos2Connection] = useState(true); // falseからtrueに変更
   const [ros2WebSocketUrl, setRos2WebSocketUrl] = useState('ws://localhost:9090');
 
   // 設定の保存と読み込み
