@@ -13,16 +13,16 @@ interface P5SketchProps {
   eyeSpacingFactor?: number; // 目の間隔を調整するためのプロパティを追加
   // ROS2接続のための追加プロパティ
   enableRos2Connection?: boolean;
-  ros2WebSocketUrl?: string;
+  ros2HttpUrl?: string; // HTTPエンドポイントのURL
 }
 
 export const P5Sketch: React.FC<P5SketchProps> = ({ 
-  fullScreen = false, 
+  fullScreen = true, 
   width = 400, 
   height = 400,
   eyeSpacingFactor = 1.0, // デフォルト値として1.0を設定
-  enableRos2Connection = false, // ROS2接続を有効にするかどうか
-  ros2WebSocketUrl = 'ws://localhost:9090' // WebSocketのURL
+  enableRos2Connection = true, // ROS2接続を有効にするかどうか
+  ros2HttpUrl = 'http://localhost:9090' // HTTPエンドポイントのURL
 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,11 +33,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const [isPipMode, setIsPipMode] = useState(false);
   const [currentEyeSpacingFactor, setCurrentEyeSpacingFactor] = useState(eyeSpacingFactor); // 目の間隔係数をステートで管理
   
-  // WebSocket接続のためのRef
-  const websocketRef = useRef<WebSocket | null>(null);
+  // HTTP接続のための状態
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('切断');
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 手動表情変更の管理
+  const manualExpressionRef = useRef({ isManual: false, timeout: null });
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -76,85 +77,166 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // タップ前の表情を記録するためのref
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
 
-  // WebSocket接続の初期化と再接続管理
+  // HTTP接続による表情取得とポーリング
   useEffect(() => {
-    // ROS2接続が有効な場合のみWebSocketを接続
+    // ROS2接続が有効でない場合は何もしない
     if (!enableRos2Connection) {
+      setConnectionStatus('切断');
+      console.log('ROS2接続が無効のため、ポーリングを停止します');
       return;
     }
 
-    const connectWebSocket = () => {
+    console.log(`ROS2接続開始: ${ros2HttpUrl}`);
+    console.log('現在の表情状態:', expression);
+    let pollingInterval: NodeJS.Timeout;
+    let isPollingActive = true; // ポーリングが有効かどうかのフラグ
+    
+    // HTTPエンドポイントから表情を取得する関数
+    const fetchExpression = async () => {
+      if (!isPollingActive) return; // ポーリングが無効化されていたら何もしない
+      
+      // 手動表情変更中はポーリングをスキップ
+      if (manualExpressionRef.current.isManual) {
+        console.log('手動表情変更中のため、ポーリングをスキップします');
+        return;
+      }
+      
       try {
-        // ブラウザ環境でのみWebSocketを作成
-        if (typeof window !== 'undefined') {
-          const ws = new WebSocket(ros2WebSocketUrl);
+        const startTime = Date.now();
+        console.log(`[${new Date().toLocaleTimeString()}] 表情を取得中: ${ros2HttpUrl}/expression`);
+        const response = await fetch(`${ros2HttpUrl}/expression`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          // タイムアウトを短縮
+          signal: AbortSignal.timeout(2000)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const endTime = Date.now();
+          console.log(`[${new Date().toLocaleTimeString()}] 受信データ:`, data, `(${endTime - startTime}ms)`);
           
-          ws.onopen = () => {
-            console.log('WebSocket接続成功');
-            setIsConnected(true);
-            setConnectionStatus('接続中');
-          };
-          
-          ws.onmessage = (event) => {
-            try {
-              const data = JSON.parse(event.data);
-              // 有効な表情タイプであれば設定
-              if (data.expression && isValidExpression(data.expression)) {
-                setExpression(data.expression as FacialExpression);
-                console.log(`表情を${data.expression}に変更しました`);
-              }
-            } catch (error) {
-              console.error('メッセージの処理中にエラーが発生しました:', error);
-            }
-          };
-          
-          ws.onclose = () => {
-            console.log('WebSocket接続が閉じられました');
-            setIsConnected(false);
-            setConnectionStatus('切断');
+          // 有効な表情タイプであれば設定
+          if (data.expression && isValidExpression(data.expression)) {
+            const newExpression = data.expression as FacialExpression;
+            console.log(`比較: 受信=${newExpression}, 現在の表情=${newExpression}`);
             
-            // 再接続のスケジュール
-            if (reconnectTimerRef.current) {
-              clearTimeout(reconnectTimerRef.current);
-            }
-            reconnectTimerRef.current = setTimeout(() => {
-              console.log('WebSocketに再接続を試みています...');
-              connectWebSocket();
-            }, 5000); // 5秒後に再接続
-          };
+            // 表情を更新（常に新しい値をセット）
+            setExpression(newExpression);
+            console.log(`✅ 表情更新: ${newExpression}`);
+          }
           
-          ws.onerror = (error) => {
-            console.error('WebSocketエラー:', error);
-            setConnectionStatus('エラー');
-          };
-          
-          websocketRef.current = ws;
+          // 接続状態を更新
+          setIsConnected(true);
+          setConnectionStatus('接続中');
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       } catch (error) {
-        console.error('WebSocket接続エラー:', error);
-        setConnectionStatus('エラー');
+        console.log('HTTP接続エラー:', error.message);
+        setIsConnected(false);
+        setConnectionStatus('切断');
       }
     };
-    
+
     // 表情が有効かどうかをチェックする関数
     const isValidExpression = (exp: string): boolean => {
       return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt'].includes(exp);
     };
+
+    // 表情をROS2サーバーに送信する関数
+    const sendExpressionToRos2 = async (newExpression: FacialExpression) => {
+      if (!enableRos2Connection) return;
+
+      try {
+        console.log(`ROS2サーバーに表情を送信中: ${newExpression}`);
+        const response = await fetch(`${ros2HttpUrl}/expression`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ expression: newExpression }),
+          signal: AbortSignal.timeout(5000)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        console.log(`✅ ROS2サーバーに表情 ${newExpression} を送信完了`);
+      } catch (error) {
+        console.warn('表情の送信に失敗しました:', error.message);
+      }
+    };
+
+    // 初回取得
+    console.log('初回表情取得を開始');
+    fetchExpression();
     
-    // WebSocket接続を開始
-    connectWebSocket();
+    // ポーリング間隔を調整（1000ms = 1秒間隔）
+    console.log('ポーリング開始（1000ms間隔）');
+    pollingInterval = setInterval(fetchExpression, 1000);
     
     // クリーンアップ
     return () => {
-      if (websocketRef.current) {
-        websocketRef.current.close();
-      }
-      
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
+      isPollingActive = false; // ポーリングを無効化
+      if (pollingInterval) {
+        console.log('ポーリング停止');
+        clearInterval(pollingInterval);
       }
     };
-  }, [enableRos2Connection, ros2WebSocketUrl]);
+  }, [enableRos2Connection, ros2HttpUrl]); // isConnectedを依存関係から削除
+
+  // 表情をHTTPで送信する関数
+  const sendExpressionToRos2 = async (newExpression: FacialExpression) => {
+    if (!enableRos2Connection) return;
+
+    try {
+      const response = await fetch(`${ros2HttpUrl}/expression`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ expression: newExpression }),
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      console.log(`HTTP経由で表情 ${newExpression} を送信しました`);
+    } catch (error) {
+      console.warn('表情の送信に失敗しました:', error.message);
+    }
+  };
+
+  // 手動表情変更を管理する関数
+  const setManualExpression = (newExpression: FacialExpression) => {
+    console.log(`手動表情変更: ${newExpression}`);
+    
+    // 手動変更フラグをセット
+    manualExpressionRef.current.isManual = true;
+    
+    // 既存のタイムアウトをクリア
+    if (manualExpressionRef.current.timeout) {
+      clearTimeout(manualExpressionRef.current.timeout);
+    }
+    
+    // 表情を変更
+    setExpression(newExpression);
+    
+    // ROS2サーバーにも新しい表情を送信（重要！）
+    sendExpressionToRos2(newExpression);
+    
+    // 5秒後に手動変更フラグを解除（ポーリング再開）
+    manualExpressionRef.current.timeout = setTimeout(() => {
+      console.log('手動表情変更の一時停止を解除します');
+      manualExpressionRef.current.isManual = false;
+    }, 5000); // 5秒間ポーリングを停止
+  };
 
   // リサイズ関連の処理
   useEffect(() => {
@@ -324,8 +406,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     console.log('記録した表情:', preHurtExpressionRef.current);
     console.log('========================');
     
-    // 痛がる表情に変更
-    setExpression('hurt');
+    // 痛がる表情に変更（手動表情変更として）
+    setManualExpression('hurt');
     
     // 1秒後に元の表情に戻す
     if (tapTimeoutRef.current) {
@@ -334,7 +416,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     tapTimeoutRef.current = setTimeout(() => {
       const restoreExpression = preHurtExpressionRef.current;
       console.log('戻す表情:', restoreExpression);
-      setExpression(restoreExpression);
+      // 元の表情に戻すときも手動表情変更として扱う
+      setManualExpression(restoreExpression);
     }, 1000);
   };
 
@@ -1311,7 +1394,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       };
       const newExpression = expressionMap[p5.key];
       console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
-      setExpression(newExpression);
+      // 通常のsetExpressionではなく、手動表情変更関数を使用
+      setManualExpression(newExpression);
     } else if (p5.key === 'p' || p5.key === 'P') {
       // Pキーでピクチャーインピクチャーモードの切り替え
       togglePictureInPicture();

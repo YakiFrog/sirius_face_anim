@@ -4,29 +4,28 @@ import Head from 'next/head'
 import { P5Sketch } from '../components/P5Sketch'
 
 export default function HomePage() {
-  const [enableRos2Connection, setEnableRos2Connection] = useState(true); // falseからtrueに変更
-  const [ros2WebSocketUrl, setRos2WebSocketUrl] = useState('ws://localhost:9090');
+  const [enableRos2Connection, setEnableRos2Connection] = useState(true); // 常にtrueに変更
+  const [ros2HttpUrl, setRos2HttpUrl] = useState('http://localhost:8080'); // HTTPエンドポイント
 
   // 設定の保存と読み込み
   useEffect(() => {
-    // ローカルストレージから設定を読み込み
-    const savedConnection = localStorage.getItem('enableRos2Connection');
-    const savedUrl = localStorage.getItem('ros2WebSocketUrl');
+    // ROS2接続は常に有効にする - ローカルストレージからの読み込みをスキップ
+    // const savedConnection = localStorage.getItem('enableRos2Connection');
+    const savedUrl = localStorage.getItem('ros2HttpUrl');
     
-    if (savedConnection !== null) {
-      setEnableRos2Connection(savedConnection === 'true');
-    }
+    // ROS2接続は常にtrueに固定
+    setEnableRos2Connection(true);
     
     if (savedUrl) {
-      setRos2WebSocketUrl(savedUrl);
+      setRos2HttpUrl(savedUrl);
     }
   }, []);
 
-  // 設定が変更されたら保存
+  // 設定が変更されたら保存（ROS2接続の状態は常にtrueで保存）
   useEffect(() => {
-    localStorage.setItem('enableRos2Connection', String(enableRos2Connection));
-    localStorage.setItem('ros2WebSocketUrl', ros2WebSocketUrl);
-  }, [enableRos2Connection, ros2WebSocketUrl]);
+    localStorage.setItem('enableRos2Connection', 'true'); // 常にtrueで保存
+    localStorage.setItem('ros2HttpUrl', ros2HttpUrl);
+  }, [ros2HttpUrl]); // enableRos2Connectionを依存関係から削除
 
   return (
     <React.Fragment>
@@ -142,14 +141,14 @@ export default function HomePage() {
         <P5Sketch 
           fullScreen={true} 
           enableRos2Connection={enableRos2Connection}
-          ros2WebSocketUrl={ros2WebSocketUrl}
+          ros2HttpUrl={ros2HttpUrl}
         />
         
         <SettingsPanel 
           enableRos2Connection={enableRos2Connection}
           setEnableRos2Connection={setEnableRos2Connection}
-          ros2WebSocketUrl={ros2WebSocketUrl}
-          setRos2WebSocketUrl={setRos2WebSocketUrl}
+          ros2HttpUrl={ros2HttpUrl}
+          setRos2HttpUrl={setRos2HttpUrl}
         />
       </div>
     </React.Fragment>
@@ -157,18 +156,18 @@ export default function HomePage() {
 }
 
 // 設定パネルコンポーネント
-function SettingsPanel({ enableRos2Connection, setEnableRos2Connection, ros2WebSocketUrl, setRos2WebSocketUrl }) {
+function SettingsPanel({ enableRos2Connection, setEnableRos2Connection, ros2HttpUrl, setRos2HttpUrl }) {
   const [showSettings, setShowSettings] = useState(false);
-  const [tempRos2WebSocketUrl, setTempRos2WebSocketUrl] = useState(ros2WebSocketUrl);
+  const [tempRos2HttpUrl, setTempRos2HttpUrl] = useState(ros2HttpUrl);
   
   // URLが変更されたときに一時的な状態を更新
   useEffect(() => {
-    setTempRos2WebSocketUrl(ros2WebSocketUrl);
-  }, [ros2WebSocketUrl]);
+    setTempRos2HttpUrl(ros2HttpUrl);
+  }, [ros2HttpUrl]);
   
   // URLの適用
-  const applyWebSocketUrl = () => {
-    setRos2WebSocketUrl(tempRos2WebSocketUrl);
+  const applyHttpUrl = () => {
+    setRos2HttpUrl(tempRos2HttpUrl);
   };
   
   return (
@@ -190,22 +189,23 @@ function SettingsPanel({ enableRos2Connection, setEnableRos2Connection, ros2WebS
             type="checkbox" 
             checked={enableRos2Connection}
             onChange={(e) => setEnableRos2Connection(e.target.checked)} 
+            disabled={true} // 常に無効化してユーザーが変更できないようにする
           />
-          ROS2接続を有効化
+          ROS2接続を有効化 (常に有効)
         </label>
         
         <label>
-          WebSocket URL:
+          HTTP URL:
           <input 
             type="text" 
-            value={tempRos2WebSocketUrl}
-            onChange={(e) => setTempRos2WebSocketUrl(e.target.value)} 
+            value={tempRos2HttpUrl}
+            onChange={(e) => setTempRos2HttpUrl(e.target.value)} 
             disabled={!enableRos2Connection}
           />
         </label>
         
         <div>
-          <button onClick={applyWebSocketUrl} disabled={!enableRos2Connection}>
+          <button onClick={applyHttpUrl} disabled={!enableRos2Connection}>
             URLを適用
           </button>
           
