@@ -73,6 +73,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // タップ/クリック反応のための状態
   const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const tapPositionRef = useRef({ x: 0, y: 0 });
+  // タップ前の表情を記録するためのref
+  const preHurtExpressionRef = useRef<FacialExpression>('neutral');
 
   // WebSocket接続の初期化と再接続管理
   useEffect(() => {
@@ -287,6 +289,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // タップ（クリック）イベントの追加
     canvas.elt.addEventListener('click', handleTap);
     canvas.elt.addEventListener('touchend', handleTap);
+    
+    // キーボード入力処理をsetupで設定
+    p5.keyPressed = () => {
+      handleKeyPress(p5);
+    };
   };
 
   // タップ（クリック）イベントのハンドラ
@@ -302,6 +309,20 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     tapPositionRef.current = { x, y };
     
+    // より詳細なデバッグ情報を出力
+    console.log('=== タップイベント詳細 ===');
+    console.log('React state expression:', expression);
+    console.log('prevExpressionRef.current:', prevExpressionRef.current);
+    console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
+    
+    // 痛がる表情に変更する前に、現在の表情を記録
+    // React stateではなく、prevExpressionRefから取得してみる
+    const currentExpression = prevExpressionRef.current;
+    preHurtExpressionRef.current = currentExpression;
+    
+    console.log('記録した表情:', preHurtExpressionRef.current);
+    console.log('========================');
+    
     // 痛がる表情に変更
     setExpression('hurt');
     
@@ -310,7 +331,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       clearTimeout(tapTimeoutRef.current);
     }
     tapTimeoutRef.current = setTimeout(() => {
-      setExpression('neutral');
+      const restoreExpression = preHurtExpressionRef.current;
+      console.log('戻す表情:', restoreExpression);
+      setExpression(restoreExpression);
     }, 1000);
   };
 
@@ -895,11 +918,6 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.stroke(255);
     p5.noFill();
     p5.strokeWeight(strokeWeight);
-    
-    // キーボード入力処理を更新
-    p5.keyPressed = () => {
-      handleKeyPress(p5);
-    };
 
     // 表情によって口の位置を調整
     switch (expression) {
@@ -1290,7 +1308,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         '6': 'crying',
         '7': 'hurt'
       };
-      setExpression(expressionMap[p5.key]);
+      const newExpression = expressionMap[p5.key];
+      console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
+      setExpression(newExpression);
     } else if (p5.key === 'p' || p5.key === 'P') {
       // Pキーでピクチャーインピクチャーモードの切り替え
       togglePictureInPicture();
