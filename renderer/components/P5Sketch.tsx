@@ -161,6 +161,39 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       }
     };
 
+    // HTTPエンドポイントから表示モードを取得する関数
+    const fetchDisplayMode = async () => {
+      if (!isPollingActive) return;
+      
+      try {
+        const response = await fetch(`${ros2HttpUrl}/display_mode`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(2000)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.display_mode && (data.display_mode === 'face' || data.display_mode === 'image')) {
+            // HTTPサーバーからの表示モードが現在の状態と異なる場合のみ更新
+            if (data.display_mode !== displayMode) {
+              console.log(`表示モード更新: ${displayMode} -> ${data.display_mode}`);
+              // 親コンポーネント（home.tsx）の状態を更新
+              if (onDisplayModeToggle && data.display_mode !== displayMode) {
+                // 直接状態を更新するのではなく、コールバックを使用
+                console.log('HTTPサーバーからの表示モード変更を適用');
+                onDisplayModeToggle();
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log('表示モード取得エラー:', error.message);
+      }
+    };
+
     // 表情が有効かどうかをチェックする関数
     const isValidExpression = (exp: string): boolean => {
       return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt'].includes(exp);
@@ -194,10 +227,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 初回取得
     console.log('初回表情取得を開始');
     fetchExpression();
+    fetchDisplayMode();
     
     // ポーリング間隔を調整（1000ms = 1秒間隔）
     console.log('ポーリング開始（1000ms間隔）');
-    pollingInterval = setInterval(fetchExpression, 1000);
+    pollingInterval = setInterval(() => {
+      fetchExpression();
+      fetchDisplayMode();
+    }, 1000);
     
     // クリーンアップ
     return () => {
@@ -207,7 +244,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         clearInterval(pollingInterval);
       }
     };
-  }, [enableRos2Connection, ros2HttpUrl]); // isConnectedを依存関係から削除
+  }, [enableRos2Connection, ros2HttpUrl, displayMode, onDisplayModeToggle]); // displayModeとonDisplayModeToggleを依存関係に追加
 
   // 表情をHTTPで送信する関数
   const sendExpressionToRos2 = async (newExpression: FacialExpression) => {
@@ -1526,8 +1563,6 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     if (p5.tearOffsets[1] > p5.tearMaxOffsets[1]) {
       p5.tearOffsets[1] = 0;
       // 速度をわずかにランダム化
-
-
       p5.tearSpeeds[1] = 0.4 + Math.random() * 0.3;
     }
     
