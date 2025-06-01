@@ -6,6 +6,12 @@ import { P5Sketch } from '../components/P5Sketch'
 export default function HomePage() {
   const [enableRos2Connection, setEnableRos2Connection] = useState(true); // 常にtrueに変更
   const [ros2HttpUrl, setRos2HttpUrl] = useState('http://localhost:8080'); // HTTPエンドポイント
+  
+  // 画像表示モードの状態を追加
+  const [displayMode, setDisplayMode] = useState<'face' | 'image'>('face');
+  const [imagePath, setImagePath] = useState('');
+  const [imageScaleMode, setImageScaleMode] = useState<'fit' | 'fill' | 'stretch'>('fit');
+  const [imageOpacity, setImageOpacity] = useState(1.0);
 
   // 設定の保存と読み込み
   useEffect(() => {
@@ -13,11 +19,33 @@ export default function HomePage() {
     // const savedConnection = localStorage.getItem('enableRos2Connection');
     const savedUrl = localStorage.getItem('ros2HttpUrl');
     
+    // 画像表示モードの設定を読み込み
+    const savedDisplayMode = localStorage.getItem('displayMode') as 'face' | 'image';
+    const savedImagePath = localStorage.getItem('imagePath');
+    const savedImageScaleMode = localStorage.getItem('imageScaleMode') as 'fit' | 'fill' | 'stretch';
+    const savedImageOpacity = localStorage.getItem('imageOpacity');
+    
     // ROS2接続は常にtrueに固定
     setEnableRos2Connection(true);
     
     if (savedUrl) {
       setRos2HttpUrl(savedUrl);
+    }
+    
+    if (savedDisplayMode) {
+      setDisplayMode(savedDisplayMode);
+    }
+    
+    if (savedImagePath) {
+      setImagePath(savedImagePath);
+    }
+    
+    if (savedImageScaleMode) {
+      setImageScaleMode(savedImageScaleMode);
+    }
+    
+    if (savedImageOpacity) {
+      setImageOpacity(parseFloat(savedImageOpacity));
     }
   }, []);
 
@@ -25,7 +53,52 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem('enableRos2Connection', 'true'); // 常にtrueで保存
     localStorage.setItem('ros2HttpUrl', ros2HttpUrl);
-  }, [ros2HttpUrl]); // enableRos2Connectionを依存関係から削除
+    localStorage.setItem('displayMode', displayMode);
+    localStorage.setItem('imagePath', imagePath);
+    localStorage.setItem('imageScaleMode', imageScaleMode);
+    localStorage.setItem('imageOpacity', imageOpacity.toString());
+  }, [ros2HttpUrl, displayMode, imagePath, imageScaleMode, imageOpacity]); // 画像関連の状態を依存関係に追加
+
+  // グローバルキーボードイベントハンドラーを追加（最上位レベルで処理）
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      console.log('グローバルキーイベント:', event.key, '現在のモード:', displayMode);
+      
+      if (event.key.toLowerCase() === 'i') {
+        console.log('グローバル経由でIキーが検出されました - 現在のモード:', displayMode);
+        const newMode = displayMode === 'face' ? 'image' : 'face';
+        console.log('新しいモードに切り替え:', newMode);
+        setDisplayMode(newMode);
+        
+        // 画像モードに切り替わる時は、常に1.pngを設定
+        if (newMode === 'image') {
+          setImagePath('/screen/1.png');
+          console.log('1.pngを設定しました');
+        }
+        
+        event.preventDefault();
+        event.stopPropagation();
+      } 
+      // 数字キーでの画像切り替えを無効化（コメントアウト）
+      // else if (displayMode === 'image' && event.key >= '1' && event.key <= '9') {
+      //   // 画像モードで数字キーが押された場合、対応する画像に切り替え
+      //   const imageNumber = event.key;
+      //   const newImagePath = `/screen/${imageNumber}.png`;
+      //   console.log(`グローバル経由で数字キー ${imageNumber}: 画像を ${newImagePath} に変更`);
+      //   setImagePath(newImagePath);
+      //   event.preventDefault();
+      //   event.stopPropagation();
+      // }
+    };
+
+    // グローバルイベントリスナーを追加
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    
+    // クリーンアップ
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, [displayMode, imagePath]); // displayModeとimagePathを依存関係に追加
 
   return (
     <React.Fragment>
@@ -142,6 +215,26 @@ export default function HomePage() {
           fullScreen={true} 
           enableRos2Connection={enableRos2Connection}
           ros2HttpUrl={ros2HttpUrl}
+          displayMode={displayMode}
+          imagePath={imagePath}
+          imageScaleMode={imageScaleMode}
+          imageOpacity={imageOpacity}
+          onDisplayModeToggle={() => {
+            console.log('画像モード切り替え:', displayMode === 'face' ? 'image' : 'face');
+            const newMode = displayMode === 'face' ? 'image' : 'face';
+            setDisplayMode(newMode);
+            
+            // 画像モードに切り替わる時に、画像パスが空の場合はデフォルト画像を設定
+            if (newMode === 'image' && !imagePath) {
+              setImagePath('/screen/1.png');
+              console.log('デフォルト画像を設定しました: /screen/1.png');
+            }
+          }}
+          onImagePathChange={(path: string) => {
+            // P5Sketchコンポーネントから画像パスの変更を受け取る
+            console.log('画像パスが変更されました:', path);
+            setImagePath(path);
+          }}
         />
         
         <SettingsPanel 
@@ -149,6 +242,14 @@ export default function HomePage() {
           setEnableRos2Connection={setEnableRos2Connection}
           ros2HttpUrl={ros2HttpUrl}
           setRos2HttpUrl={setRos2HttpUrl}
+          displayMode={displayMode}
+          setDisplayMode={setDisplayMode}
+          imagePath={imagePath}
+          setImagePath={setImagePath}
+          imageScaleMode={imageScaleMode}
+          setImageScaleMode={setImageScaleMode}
+          imageOpacity={imageOpacity}
+          setImageOpacity={setImageOpacity}
         />
       </div>
     </React.Fragment>
@@ -156,18 +257,150 @@ export default function HomePage() {
 }
 
 // 設定パネルコンポーネント
-function SettingsPanel({ enableRos2Connection, setEnableRos2Connection, ros2HttpUrl, setRos2HttpUrl }) {
+function SettingsPanel({ 
+  enableRos2Connection, 
+  setEnableRos2Connection, 
+  ros2HttpUrl, 
+  setRos2HttpUrl,
+  displayMode,
+  setDisplayMode,
+  imagePath,
+  setImagePath,
+  imageScaleMode,
+  setImageScaleMode,
+  imageOpacity,
+  setImageOpacity
+}) {
   const [showSettings, setShowSettings] = useState(false);
   const [tempRos2HttpUrl, setTempRos2HttpUrl] = useState(ros2HttpUrl);
+  const [tempImagePath, setTempImagePath] = useState(imagePath);
+  const [tempImageScaleMode, setTempImageScaleMode] = useState(imageScaleMode);
+  const [tempImageOpacity, setTempImageOpacity] = useState(imageOpacity);
+  const [availableImages, setAvailableImages] = useState<string[]>([]);
   
+  // screenフォルダの画像一覧を取得
+  useEffect(() => {
+    const loadScreenImages = async () => {
+      try {
+        const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+        const availableList: string[] = [];
+        
+        // 数字のファイル名をチェック (1.jpg, 2.png, 3.gif など)
+        for (let i = 1; i <= 20; i++) {
+          for (const ext of imageExtensions) {
+            const imagePath = `/screen/${i}.${ext}`;
+            try {
+              const response = await fetch(imagePath, { method: 'HEAD' });
+              if (response.ok) {
+                availableList.push(imagePath);
+              }
+            } catch (error) {
+              // ファイルが存在しない場合は無視
+            }
+          }
+        }
+        
+        setAvailableImages(availableList);
+        console.log('screenフォルダで見つかった画像:', availableList);
+      } catch (error) {
+        console.log('画像一覧の取得中にエラーが発生しました:', error);
+      }
+    };
+    
+    if (displayMode === 'image') {
+      loadScreenImages();
+    }
+  }, [displayMode]);
+
   // URLが変更されたときに一時的な状態を更新
   useEffect(() => {
     setTempRos2HttpUrl(ros2HttpUrl);
   }, [ros2HttpUrl]);
   
+  // 画像パスが変更されたときに一時的な状態を更新
+  useEffect(() => {
+    setTempImagePath(imagePath);
+  }, [imagePath]);
+  
+  // 画像スケールモードが変更されたときに一時的な状態を更新
+  useEffect(() => {
+    setTempImageScaleMode(imageScaleMode);
+  }, [imageScaleMode]);
+  
+  // 画像不透明度が変更されたときに一時的な状態を更新
+  useEffect(() => {
+    setTempImageOpacity(imageOpacity);
+  }, [imageOpacity]);
+  
   // URLの適用
   const applyHttpUrl = () => {
     setRos2HttpUrl(tempRos2HttpUrl);
+  };
+  
+  // 画像パスの適用
+  const applyImagePath = () => {
+    setImagePath(tempImagePath);
+  };
+  
+  // 画像スケールモードの適用
+  const applyImageScaleMode = () => {
+    setImageScaleMode(tempImageScaleMode);
+  };
+  
+  // 画像不透明度の適用
+  const applyImageOpacity = () => {
+    setImageOpacity(tempImageOpacity);
+  };
+  
+  // 画像ファイル選択の処理
+  const handleImageFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      // ファイルをData URLに変換
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result as string;
+        setTempImagePath(dataUrl);
+        setImagePath(dataUrl); // 即座に適用
+        console.log('画像ファイルが選択されました:', file.name);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert('画像ファイルを選択してください（jpg, png, gif など）');
+    }
+  };
+
+  // ドラッグ&ドロップの処理
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    const files = event.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result as string;
+          setTempImagePath(dataUrl);
+          setImagePath(dataUrl); // 即座に適用
+          console.log('画像ファイルがドロップされました:', file.name);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        alert('画像ファイルをドロップしてください（jpg, png, gif など）');
+      }
+    }
+  };
+
+  // screenフォルダの画像を選択
+  const selectScreenImage = (imagePath: string) => {
+    setTempImagePath(imagePath);
+    setImagePath(imagePath); // 即座に適用
+    console.log('screenフォルダの画像が選択されました:', imagePath);
   };
   
   return (
@@ -204,10 +437,98 @@ function SettingsPanel({ enableRos2Connection, setEnableRos2Connection, ros2Http
           />
         </label>
         
+        <label>
+          画像表示モード:
+          <select 
+            value={displayMode} 
+            onChange={(e) => setDisplayMode(e.target.value as 'face' | 'image')}
+          >
+            <option value="face">顔アニメーション</option>
+            <option value="image">画像表示</option>
+          </select>
+        </label>
+        
+        {displayMode === 'image' && (
+          <>
+            <label>
+              画像パス:
+              <input 
+                type="text" 
+                value={tempImagePath}
+                onChange={(e) => setTempImagePath(e.target.value)} 
+              />
+            </label>
+            
+            <label>
+              画像スケールモード:
+              <select 
+                value={tempImageScaleMode} 
+                onChange={(e) => setTempImageScaleMode(e.target.value as 'fit' | 'fill' | 'stretch')}
+              >
+                <option value="fit">フィット</option>
+                <option value="fill">塗りつぶし</option>
+                <option value="stretch">ストレッチ</option>
+              </select>
+            </label>
+            
+            <label>
+              画像不透明度:
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.01" 
+                value={tempImageOpacity}
+                onChange={(e) => setTempImageOpacity(parseFloat(e.target.value))} 
+              />
+            </label>
+            
+            <label>
+              利用可能な画像:
+              <select 
+                value={tempImagePath}
+                onChange={(e) => setTempImagePath(e.target.value)} 
+              >
+                <option value="">手動入力または選択</option>
+                {availableImages.map((image) => (
+                  <option key={image} value={image}>
+                    {image}
+                  </option>
+                ))}
+              </select>
+            </label>
+            
+            <label>
+              画像ファイル選択:
+              <input 
+                type="file" 
+                accept="image/*"
+                onChange={handleImageFileSelect}
+              />
+            </label>
+          </>
+        )}
+        
         <div>
           <button onClick={applyHttpUrl} disabled={!enableRos2Connection}>
             URLを適用
           </button>
+          
+          {displayMode === 'image' && (
+            <>
+              <button onClick={applyImagePath}>
+                画像パスを適用
+              </button>
+              
+              <button onClick={applyImageScaleMode}>
+                スケールモードを適用
+              </button>
+              
+              <button onClick={applyImageOpacity}>
+                不透明度を適用
+              </button>
+            </>
+          )}
           
           <button onClick={() => setShowSettings(false)}>
             閉じる

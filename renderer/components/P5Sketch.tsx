@@ -14,6 +14,14 @@ interface P5SketchProps {
   // ROS2接続のための追加プロパティ
   enableRos2Connection?: boolean;
   ros2HttpUrl?: string; // HTTPエンドポイントのURL
+  // 画像表示モードのプロパティ
+  displayMode?: 'face' | 'image'; // 表示モード: 顔 または 画像
+  imagePath?: string; // 表示する画像のパス
+  imageScaleMode?: 'fit' | 'fill' | 'stretch'; // 画像のスケーリングモード
+  imageOpacity?: number; // 画像の透明度 (0-1)
+  // 画像モード切り替えのコールバック
+  onDisplayModeToggle?: () => void;
+  onImagePathChange?: (path: string) => void; // 画像パス変更のコールバック
 }
 
 export const P5Sketch: React.FC<P5SketchProps> = ({ 
@@ -22,7 +30,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   height = 400,
   eyeSpacingFactor = 1.0, // デフォルト値として1.0を設定
   enableRos2Connection = true, // ROS2接続を有効にするかどうか
-  ros2HttpUrl = 'http://localhost:9090' // HTTPエンドポイントのURL
+  ros2HttpUrl = 'http://localhost:9090', // HTTPエンドポイントのURL
+  // 画像表示モードのプロパティにデフォルト値を設定
+  displayMode = 'face', // デフォルトは顔モード
+  imagePath = '', // デフォルトは空文字
+  imageScaleMode = 'fit', // デフォルトはfitモード
+  imageOpacity = 1.0, // デフォルトは完全不透明
+  onDisplayModeToggle, // コールバック関数を追加
+  onImagePathChange // 画像パス変更のコールバック
 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +54,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   
   // 手動表情変更の管理
   const manualExpressionRef = useRef({ isManual: false, timeout: null });
+  
+  // 画像表示モードのための状態
+  const [loadedImage, setLoadedImage] = useState<any>(null);
+  const [imageLoadError, setImageLoadError] = useState<string | null>(null);
+  const loadedImageRef = useRef<any>(null); // p5で使用するための画像ref
   
   // 基準サイズを定義（16:9比率の基準解像度）
   const baseWidth = 1920;
@@ -238,6 +258,26 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }, 5000); // 5秒間ポーリングを停止
   };
 
+  // 画像読み込み処理
+  useEffect(() => {
+    if (displayMode === 'image' && imagePath) {
+      setImageLoadError(null);
+      console.log(`画像を読み込み中: ${imagePath}`);
+      
+      // 既存の画像をクリアせず、新しい画像が読み込まれるまで保持
+      // setLoadedImage(null);
+      // loadedImageRef.current = null;
+      
+      // p5.jsで使用するための画像読み込みは、draw関数内で行う
+      // ここでは読み込み状態の管理のみ行う
+    } else if (displayMode === 'face') {
+      // 顔モードに切り替わった場合のみ画像をクリア
+      setLoadedImage(null);
+      loadedImageRef.current = null;
+      setImageLoadError(null);
+    }
+  }, [displayMode, imagePath]);
+
   // リサイズ関連の処理
   useEffect(() => {
     if (fullScreen) {
@@ -368,13 +408,58 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     const canvas = p5.createCanvas(dimensions.width, dimensions.height).parent(canvasParentRef);
     canvasRef.current = canvas.elt; // canvasの参照を保存
     
+    // キャンバスにtabindexを設定してフォーカス可能にする
+    canvas.elt.setAttribute('tabindex', '0');
+    canvas.elt.style.outline = 'none'; // フォーカス時の枠線を非表示
+    
+    // キャンバスがクリックされたときにフォーカスを設定
+    canvas.elt.addEventListener('click', () => {
+      canvas.elt.focus();
+      console.log('キャンバスにフォーカスが設定されました');
+    });
+    
+    // 初期フォーカスを設定
+    setTimeout(() => {
+      canvas.elt.focus();
+      console.log('初期フォーカスが設定されました');
+    }, 100);
+    
     // タップ（クリック）イベントの追加
     canvas.elt.addEventListener('click', handleTap);
     canvas.elt.addEventListener('touchend', handleTap);
     
+    // 通常のDOM keydownイベントも追加（デバッグ用）
+    canvas.elt.addEventListener('keydown', (event) => {
+      console.log('DOM keydown イベント:', event.key, 'displayMode:', displayMode);
+      if (event.key.toLowerCase() === 'i') {
+        console.log('DOM経由でIキーが検出されました - 現在のモード:', displayMode);
+        if (onDisplayModeToggle) {
+          console.log('onDisplayModeToggleを実行します');
+          onDisplayModeToggle();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+    
+    // グローバルなキーボードイベントも追加（フォーカス問題対策）
+    window.addEventListener('keydown', (event) => {
+      console.log('Window keydown イベント:', event.key, 'displayMode:', displayMode);
+      if (event.key.toLowerCase() === 'i') {
+        console.log('Window経由でIキーが検出されました - 現在のモード:', displayMode);
+        if (onDisplayModeToggle) {
+          console.log('onDisplayModeToggleを実行します');
+          onDisplayModeToggle();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+    
     // キーボード入力処理をsetupで設定
     p5.keyPressed = () => {
-      handleKeyPress(p5);
+      console.log('p5.keyPressed:', p5.key, 'displayMode:', displayMode);
+      return handleKeyPress(p5);
     };
   };
 
@@ -421,11 +506,131 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }, 1000);
   };
 
-  // p5のdraw関数 - 明示的に色指定
+  // p5のdraw関数 - 表示モードに応じて顔または画像を描画
   const draw = (p5) => {
     // 背景を黒で塗りつぶす
     p5.background(0, 0, 0);
     
+    if (displayMode === 'image') {
+      // 画像表示モード
+      drawImageMode(p5);
+    } else {
+      // 顔表示モード（既存の処理）
+      drawFaceMode(p5);
+    }
+  };
+
+  // 画像表示モードの描画処理
+  const drawImageMode = (p5) => {
+    // p5.jsで画像を読み込む必要がある場合
+    if (!loadedImageRef.current && imagePath) {
+      // p5.jsで画像を読み込み中
+      p5.fill(255);
+      p5.textAlign(p5.CENTER, p5.CENTER);
+      p5.textSize(32 * scaleFactorRef.current);
+      p5.text('画像を読み込み中...', p5.width / 2, p5.height / 2);
+      
+      // p5.loadImage()を使用して画像を非同期で読み込み
+      p5.loadImage(imagePath, 
+        (img) => {
+          // 読み込み成功
+          console.log('p5.jsで画像の読み込みが完了しました');
+          loadedImageRef.current = img;
+          setLoadedImage(img);
+          setImageLoadError(null);
+        },
+        (err) => {
+          // 読み込み失敗
+          console.error('p5.jsで画像の読み込みに失敗しました:', err);
+          setImageLoadError(`画像の読み込みに失敗しました: ${imagePath}`);
+          loadedImageRef.current = null;
+          setLoadedImage(null);
+        }
+      );
+      return;
+    }
+
+    if (!loadedImageRef.current) {
+      // 画像が読み込まれていない場合はエラーメッセージまたは読み込み中表示
+      if (imageLoadError) {
+        // エラーメッセージを表示
+        p5.fill(255, 100, 100); // 赤っぽい色
+        p5.textAlign(p5.CENTER, p5.CENTER);
+        p5.textSize(32 * scaleFactorRef.current);
+        p5.text('画像の読み込みに失敗しました', p5.width / 2, p5.height / 2 - 50);
+        p5.textSize(24 * scaleFactorRef.current);
+        p5.text(imagePath, p5.width / 2, p5.height / 2 + 50);
+      } else if (imagePath) {
+        // 読み込み中表示
+        p5.fill(255);
+        p5.textAlign(p5.CENTER, p5.CENTER);
+        p5.textSize(32 * scaleFactorRef.current);
+        p5.text('画像を読み込み中...', p5.width / 2, p5.height / 2);
+      } else {
+        // 画像パスが指定されていない場合
+        p5.fill(128);
+        p5.textAlign(p5.CENTER, p5.CENTER);
+        p5.textSize(32 * scaleFactorRef.current);
+        p5.text('画像パスが指定されていません', p5.width / 2, p5.height / 2);
+      }
+      return;
+    }
+
+    const img = loadedImageRef.current;
+    
+    // 画像のスケーリング計算
+    let drawWidth, drawHeight, drawX, drawY;
+    
+    switch (imageScaleMode) {
+      case 'fit':
+        // アスペクト比を保持して画面に収まるようにスケーリング
+        const scaleX = dimensions.width / img.width;
+        const scaleY = dimensions.height / img.height;
+        const scale = Math.min(scaleX, scaleY);
+        drawWidth = img.width * scale;
+        drawHeight = img.height * scale;
+        drawX = (dimensions.width - drawWidth) / 2;
+        drawY = (dimensions.height - drawHeight) / 2;
+        break;
+        
+      case 'fill':
+        // アスペクト比を保持して画面全体を埋めるようにスケーリング（一部切り取り）
+        const scaleXFill = dimensions.width / img.width;
+        const scaleYFill = dimensions.height / img.height;
+        const scaleFill = Math.max(scaleXFill, scaleYFill);
+        drawWidth = img.width * scaleFill;
+        drawHeight = img.height * scaleFill;
+        drawX = (dimensions.width - drawWidth) / 2;
+        drawY = (dimensions.height - drawHeight) / 2;
+        break;
+        
+      case 'stretch':
+        // アスペクト比を無視して画面全体に引き伸ばし
+        drawWidth = dimensions.width;
+        drawHeight = dimensions.height;
+        drawX = 0;
+        drawY = 0;
+        break;
+        
+      default:
+        drawWidth = img.width;
+        drawHeight = img.height;
+        drawX = (dimensions.width - drawWidth) / 2;
+        drawY = (dimensions.height - drawHeight) / 2;
+    }
+    
+    // 透明度を設定
+    p5.tint(255, imageOpacity * 255);
+    
+    // 画像を描画
+    p5.image(img, drawX, drawY, drawWidth, drawHeight);
+    
+    // tintをリセット
+    p5.noTint();
+  };
+
+  // 顔表示モードの描画処理（既存のdraw関数の内容）
+  const drawFaceMode = (p5) => {
     // 頭の動きを更新
     updateHeadMovement(p5);
     
@@ -1321,6 +1526,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     if (p5.tearOffsets[1] > p5.tearMaxOffsets[1]) {
       p5.tearOffsets[1] = 0;
       // 速度をわずかにランダム化
+
+
       p5.tearSpeeds[1] = 0.4 + Math.random() * 0.3;
     }
     
@@ -1382,7 +1589,37 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // キーボード入力処理を追加
   const handleKeyPress = (p5) => {
-    if (p5.key >= '1' && p5.key <= '7') {
+    console.log(`キー ${p5.key} が押されました (現在のモード: ${displayMode})`);
+    
+    if (p5.key === 'i' || p5.key === 'I') {
+      // Iキーで画像モードと顔モードの切り替え（最優先で処理）
+      console.log('Iキー: 画像モード切り替え開始');
+      if (onDisplayModeToggle) {
+        onDisplayModeToggle();
+      }
+    } else if (p5.key === 'p' || p5.key === 'P') {
+      // Pキーでピクチャーインピクチャーモードの切り替え
+      togglePictureInPicture();
+    } 
+    // 画像モードでの数字キー処理を無効化（コメントアウト）
+    // else if (displayMode === 'image' && p5.key >= '1' && p5.key <= '9') {
+    //   // 画像モードで数字キーが押された場合、対応する画像に切り替え
+    //   const imageNumber = p5.key;
+    //   const newImagePath = `/screen/${imageNumber}.png`;
+    //   console.log(`数字キー ${imageNumber}: 画像を ${newImagePath} に変更`);
+    //   
+    //   // 画像をクリアしてから新しい画像をセット
+    //   setLoadedImage(null);
+    //   loadedImageRef.current = null;
+    //   setImageLoadError(null);
+    //   
+    //   // 親コンポーネントに画像パス変更を通知
+    //   if (onImagePathChange) {
+    //     onImagePathChange(newImagePath);
+    //   }
+    // } 
+    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '7') {
+      // 顔モードで数字キーが押された場合、表情を変更
       const expressionMap: Record<string, FacialExpression> = {
         '1': 'neutral',
         '2': 'happy',
@@ -1396,10 +1633,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
       // 通常のsetExpressionではなく、手動表情変更関数を使用
       setManualExpression(newExpression);
-    } else if (p5.key === 'p' || p5.key === 'P') {
-      // Pキーでピクチャーインピクチャーモードの切り替え
-      togglePictureInPicture();
     }
+    
+    // イベントの伝播を防ぐ
+    return false;
   };
 
   // ピクチャーインピクチャーモード切り替え
