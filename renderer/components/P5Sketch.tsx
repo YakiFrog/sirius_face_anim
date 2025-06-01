@@ -315,10 +315,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     console.log('prevExpressionRef.current:', prevExpressionRef.current);
     console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
     
-    // 痛がる表情に変更する前に、現在の表情を記録
-    // React stateではなく、prevExpressionRefから取得してみる
-    const currentExpression = prevExpressionRef.current;
-    preHurtExpressionRef.current = currentExpression;
+    // hurt表情でない場合のみ、現在の表情を記録
+    if (prevExpressionRef.current !== 'hurt') {
+      preHurtExpressionRef.current = prevExpressionRef.current;
+    }
+    // hurt表情の場合は既存の記録をそのまま保持
     
     console.log('記録した表情:', preHurtExpressionRef.current);
     console.log('========================');
