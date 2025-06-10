@@ -12,7 +12,7 @@
 ## 🎭 主な機能
 
 ### 表情制御システム
-- **7種類の表情**: neutral, happy, angry, sad, surprised, crying, hurt
+- **8種類の表情**: neutral, happy, angry, sad, surprised, crying, hurt, wink
 - **リアルタイム切り替え**: キーボードまたはHTTP APIで即座に表情変更
 - **アニメーション効果**: 表情変更時のジャンプエフェクト
 - **自然な動作**: 自動瞬き、頭の微細な動き、呼吸のような揺れ
@@ -104,6 +104,7 @@ yarn build
 | `5` | surprised | 驚き（大きな目、丸い口） |
 | `6` | crying | 泣き（涙のアニメーション付き） |
 | `7` | hurt | 痛がる表情（波打つ口） |
+| `8` | wink | ウィンク（左目を半目に） |
 | `P` | - | Picture-in-Picture切り替え |
 
 ### マウス/タッチ操作
@@ -142,7 +143,7 @@ Content-Type: application/json
 
 ### 有効な表情タイプ
 ```json
-["neutral", "happy", "angry", "sad", "surprised", "crying", "hurt"]
+["neutral", "happy", "angry", "sad", "surprised", "crying", "hurt", "wink"]
 ```
 
 ### curl使用例

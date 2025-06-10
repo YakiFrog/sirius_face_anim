@@ -86,7 +86,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   });
   
   // 表情の種類
-  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt';
+  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink';
   // 表情を状態で保持
   const [expression, setExpression] = useState<FacialExpression>('neutral');
   const prevExpressionRef = useRef<FacialExpression>('neutral');
@@ -196,7 +196,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
     // 表情が有効かどうかをチェックする関数
     const isValidExpression = (exp: string): boolean => {
-      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt'].includes(exp);
+      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink'].includes(exp);
     };
 
     // 表情をROS2サーバーに送信する関数
@@ -771,6 +771,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
             18; // 高さ係数18
           jumpX = Math.sin(expressionAnim.intensity * Math.PI * 12) * 9 * scaleFactorRef.current;
           break;
+          
+        case 'wink':
+          // ウィンクは軽やかで楽しげなジャンプ
+          jumpHeight = scaleFactorRef.current * 
+            (-4 * Math.pow(expressionAnim.intensity - 0.5, 2) + 1) * 
+            22; // 高さ係数22（happyより少し控えめ）
+          jumpX = Math.sin(expressionAnim.intensity * Math.PI * 3) * 4 * scaleFactorRef.current;
+          break;
       }
       
       // 通常の頭の動きに表情アニメーションの効果を加える
@@ -983,6 +991,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         lowerEyelid = 0.5; // 下まぶたを上げる
         pupilSizeFactor = 0.8; // 瞳を小さく
         break;
+        
+      case 'wink': // ウィンク
+        eyeAngle = -0.05; // 軽い笑顔の角度
+        eyeWidthFactor = 1.0; // 通常サイズ
+        eyeHeightFactor = 1.0; // 通常サイズ
+        pupilSizeFactor = 1.0; // 通常の瞳サイズ
+        upperEyelid = 1.0; // 左目は開いたまま
+        lowerEyelid = 1.0; // 左目は開いたまま
+        break;
     }
     
     // 調整されたサイズを適用
@@ -990,13 +1007,27 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     currentEyeHeight *= eyeHeightFactor * blinkAmount;
     currentPupilSize *= pupilSizeFactor;
     
+    // winkの場合は左右の目で異なるまぶたの設定を使用
+    let leftUpperEyelid = upperEyelid;
+    let leftLowerEyelid = lowerEyelid;
+    let rightUpperEyelid = upperEyelid;
+    let rightLowerEyelid = lowerEyelid;
+    
+    if (expression === 'wink') {
+      // 左目を半目に、右目は開いたまま
+      leftUpperEyelid = 0.85; // 左目を半目にする
+      leftLowerEyelid = 0.99; // 左目の下まぶたも少し上げる
+      rightUpperEyelid = 0.0; // 右目は開いたまま
+      rightLowerEyelid = 0.0; // 右目は開いたまま
+    }
+    
     // 左目の描画
     p5.push(); // 現在の描画設定を保存
     p5.translate(p5.width / 2 - params.eyeSpacing, p5.height / 2 - params.eyeYOffset + eyeYOffset);
     p5.rotate(eyeAngle);
     
     // まぶたの効果を適用して目を描画
-    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, upperEyelid, lowerEyelid, p5.leftEyePos, pupilYOffset, currentPupilSize, blinkAmount);
+    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, leftUpperEyelid, leftLowerEyelid, p5.leftEyePos, pupilYOffset, currentPupilSize, blinkAmount);
     
     p5.pop(); // 描画設定を元に戻す
     
@@ -1006,7 +1037,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.rotate(-eyeAngle); // 左右対称になるよう符号を反転
     
     // まぶたの効果を適用して目を描画
-    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, upperEyelid, lowerEyelid, p5.rightEyePos, pupilYOffset, currentPupilSize, blinkAmount);
+    drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, rightUpperEyelid, rightLowerEyelid, p5.rightEyePos, pupilYOffset, currentPupilSize, blinkAmount);
     
     p5.pop();
   };
@@ -1024,31 +1055,34 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     const outlineWeight = eyeWidth * 0.03;
     
     // まぶたが閉じている効果を反映した目の高さ
-    const visibleEyeHeight = eyeHeight * Math.max(0.1, Math.min(upperLidOpenness, lowerLidOpenness));
+    const visibleEyeHeight = eyeHeight * Math.max(0.0, Math.min(upperLidOpenness, lowerLidOpenness));
     
-    // 1. 白目を描画
-    // p5.stroke(255, 0, 0, 100);
-    // p5.strokeWeight(outlineWeight);
-    p5.fill(255);
-    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.92);
-    
-    // 2. 瞳を描画
-    p5.fill(0);
-    p5.noStroke();
-    const pupilScale = Math.min(upperLidOpenness, lowerLidOpenness) * blinkAmount;
-    p5.ellipse(
-      pupilPos.x,
-      pupilPos.y + pupilYOffset + eyeCenterShift, 
-      pupilSize * 1.5,
-      pupilSize * 1.5 * Math.min(1, pupilScale)
-    );
+    // まぶたが完全に閉じている場合は白目と瞳を描画しない
+    if (Math.min(upperLidOpenness, lowerLidOpenness) > 0.0) {
+      // 1. 白目を描画
+      // p5.stroke(255, 0, 0, 100);
+      // p5.strokeWeight(outlineWeight);
+      p5.fill(255);
+      p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight, (visibleEyeHeight + outlineWeight) * 0.92);
+      
+      // 2. 瞳を描画
+      p5.fill(0);
+      p5.noStroke();
+      const pupilScale = Math.min(upperLidOpenness, lowerLidOpenness) * blinkAmount;
+      p5.ellipse(
+        pupilPos.x,
+        pupilPos.y + pupilYOffset + eyeCenterShift, 
+        pupilSize * 1.5,
+        pupilSize * 1.5 * Math.min(1, pupilScale)
+      );
 
-    // 白目を描画する一回り小さい円
-    p5.noFill();
-    p5.stroke(255, 255, 255, 255);
-    // p5.stroke(255, 0, 0, 100);
-    p5.strokeWeight(outlineWeight * 1.5);
-    p5.ellipse(0, eyeCenterShift, eyeWidth * 0.87 + outlineWeight, (visibleEyeHeight * 0.87 + outlineWeight));
+      // 白目を描画する一回り小さい円
+      p5.noFill();
+      p5.stroke(255, 255, 255, 255);
+      // p5.stroke(255, 0, 0, 100);
+      p5.strokeWeight(outlineWeight * 1.5);
+      p5.ellipse(0, eyeCenterShift, eyeWidth * 0.87 + outlineWeight, (visibleEyeHeight * 0.87 + outlineWeight));
+    }
     
     // 3. 上まぶたを描画
     let upperLidPosition = 0;
@@ -1102,9 +1136,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       p5.endShape(p5.CLOSE);
     }
     
+    // 完全に閉じている場合は目全体を黒で覆う
+    if (upperLidOpenness <= 0.0 && lowerLidOpenness <= 0.0) {
+      p5.fill(0);
+      p5.noStroke();
+      p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.8);
+    }
+    
     // 5. まぶたの白い縁を描画（単純化して自然に）
     p5.stroke(255);
-    p5.strokeWeight(outlineWeight * 1.5); // わずかに太めに
+    p5.strokeWeight(outlineWeight * 1.6); // わずかに太めに
     p5.strokeCap(p5.ROUND); // 線の端を丸く
     
     // 上まぶたの白い縁
@@ -1138,11 +1179,19 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       p5.vertex(eyeWidth * 0.5, lowerLidPosition);
       p5.endShape();
     }
-    // 目の外側に黒い縁を描画
-    p5.noFill();
-    p5.stroke(0);
-    p5.strokeWeight(outlineWeight * 5.0);
-    p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight * 3, (visibleEyeHeight + outlineWeight * 3) * 1.0);
+    
+    // 完全に閉じている場合は目全体を黒で覆う
+    if (upperLidOpenness <= 0.0 && lowerLidOpenness <= 0.0) {
+      p5.fill(0);
+      p5.noStroke();
+      p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.2);
+    } else {
+      // 目の外側に黒い縁を描画（目が開いている場合のみ）
+      p5.noFill();
+      p5.stroke(0);
+      p5.strokeWeight(outlineWeight * 5.0);
+      p5.ellipse(0, eyeCenterShift, eyeWidth + outlineWeight * 3, (visibleEyeHeight + outlineWeight * 3) * 1.0);
+    }
     
     // 描画設定をリセット
     p5.strokeWeight(1);
@@ -1174,6 +1223,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
       case 'crying':
         noseY -= params.eyeSize * 0.15;
+        break;
+      case 'wink':
+        noseY -= params.eyeSize * 0.08; // happyより少し控えめ
         break;
     }
     
@@ -1211,6 +1263,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
       case 'crying':
         adjustedPhiltrumLength *= 0.8;
+        break;
+      case 'wink':
+        adjustedPhiltrumLength *= 1.1; // 軽い笑みなので少し長め
         break;
     }
     
@@ -1267,6 +1322,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
       case 'hurt':
         mouthY -= params.eyeSize * 0.06;
+        break;
+      case 'wink':
+        mouthY -= params.eyeSize * 0.15; // happyより少し控えめな位置
         break;
     }
     
@@ -1532,6 +1590,22 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
         p5.endShape();
         break;
+        
+      case 'wink': // ウィンク
+        // 軽やかな笑み（ハッピーより少し控えめ）
+        p5.beginShape();
+        const winkMouthWidth = mouthWidth * 0.85; // happyより少し小さい
+        p5.vertex(p5.width / 2 - winkMouthWidth / 2, mouthY);
+        p5.bezierVertex(
+          p5.width / 2 - winkMouthWidth / 4, 
+          mouthY + mouthHeight * 0.8, // happyより少し浅い笑み
+          p5.width / 2 + winkMouthWidth / 4, 
+          mouthY + mouthHeight * 0.8, 
+          p5.width / 2 + winkMouthWidth / 2, 
+          mouthY
+        );
+        p5.endShape();
+        break;
     }
     
     // ストロークの設定をリセット
@@ -1653,7 +1727,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     //     onImagePathChange(newImagePath);
     //   }
     // } 
-    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '7') {
+    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '8') {
       // 顔モードで数字キーが押された場合、表情を変更
       const expressionMap: Record<string, FacialExpression> = {
         '1': 'neutral',
@@ -1662,7 +1736,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         '4': 'sad',
         '5': 'surprised',
         '6': 'crying',
-        '7': 'hurt'
+        '7': 'hurt',
+        '8': 'wink'
       };
       const newExpression = expressionMap[p5.key];
       console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
