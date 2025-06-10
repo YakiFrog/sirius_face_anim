@@ -1140,7 +1140,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     if (upperLidOpenness <= 0.0 && lowerLidOpenness <= 0.0) {
       p5.fill(0);
       p5.noStroke();
-      p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.8);
+      p5.ellipse(0, eyeCenterShift, eyeWidth * 2.0, eyeHeight * 2.2);
     }
     
     // 5. まぶたの白い縁を描画（単純化して自然に）
@@ -1184,7 +1184,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     if (upperLidOpenness <= 0.0 && lowerLidOpenness <= 0.0) {
       p5.fill(0);
       p5.noStroke();
-      p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.2);
+      p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.3);
     } else {
       // 目の外側に黒い縁を描画（目が開いている場合のみ）
       p5.noFill();
