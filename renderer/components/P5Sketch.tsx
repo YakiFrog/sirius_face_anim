@@ -1188,14 +1188,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       
       // ウインクした目（閉じた目）の形状を描画
       p5.stroke(255);
-      p5.strokeWeight(outlineWeight * 4.0);
+      p5.strokeWeight(outlineWeight * 3.5);
       p5.strokeCap(p5.ROUND);
       p5.noFill();
       
       // ウインクした目の曲線を描画（角度をつけたウインクらしい形状）
       // 上側の曲線（既存）
       p5.beginShape();
-      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.10); // 左端を少し下に
+      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.13); // 左端を少し下に
       
       // ベジェ曲線でウインクの形状を作成（角度をつける）
       p5.bezierVertex(
@@ -1207,13 +1207,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       
       // 下側の曲線（上側を反転させた形状）
       p5.beginShape();
-      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.10); // 左端を少し上に
+      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.13); // 左端を少し上に
       
       // ベジェ曲線で下向きの形状を作成（上側を反転）
       p5.bezierVertex(
         -eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25,  // 制御点1（左側・下向き）
         eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25,   // 制御点2（右側・下向き）
-        eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25     // 終点（右端・下向き）
+        eyeWidth * 0.15, eyeCenterShift + eyeHeight * 0.25     // 終点（右端・下向き）
       );
       p5.endShape();
       
@@ -1356,7 +1356,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         mouthY -= params.eyeSize * 0.06;
         break;
       case 'wink':
-        mouthY -= params.eyeSize * 0.2; // 口をもう少し下に配置
+        mouthY -= params.eyeSize * 0.3; // 口をもう少し下に配置
         break;
     }
     
@@ -1624,17 +1624,26 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'wink': // ウィンク
-        // 軽やかな笑み（ハッピーより少し控えめ）
+        // 左右非対称の軽やかな笑み（右の口角が上がり、左側が少し下がる）
         p5.beginShape();
         const winkMouthWidth = mouthWidth * 0.55; // 全体的な長さを短くする
-        p5.vertex(p5.width / 2 - winkMouthWidth / 2, mouthY);
+        
+        // 左端（少し下がった位置から開始）
+        const leftY = mouthY + mouthHeight * 0.45; // 左側を少し下げる
+        p5.vertex(p5.width / 2 - winkMouthWidth / 2, leftY);
+        
+        // 中央の制御点（中央やや右寄りを高めに）
+        const centerControlX1 = p5.width / 2.1 - winkMouthWidth / 6;
+        const centerControlX2 = p5.width / 2.0 + winkMouthWidth / 5;
+        const centerControlY = mouthY + mouthHeight * 1.0; // 中央を高めに
+        
+        // 右端（上がった位置で終了）
+        const rightY = mouthY + mouthHeight * 0.1; // 右側を上げる
+        
         p5.bezierVertex(
-          p5.width / 2 - winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.8, // happyより少し浅い笑み
-          p5.width / 2 + winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.8, 
-          p5.width / 2 + winkMouthWidth / 2, 
-          mouthY
+          centerControlX1, centerControlY, // 左寄り制御点
+          centerControlX2, centerControlY, // 右寄り制御点  
+          p5.width / 2.0 + winkMouthWidth / 2.0, rightY // 右端
         );
         p5.endShape();
         break;
