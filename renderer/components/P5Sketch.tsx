@@ -1015,8 +1015,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     if (expression === 'wink') {
       // 左目を半目に、右目は開いたまま
-      leftUpperEyelid = 0.90; // 左目を半目にする
-      leftLowerEyelid = 0.99; // 左目の下まぶたも少し上げる
+      leftUpperEyelid = 1.0; // 左目を半目にする
+      leftLowerEyelid = 1.0; // 左目の下まぶたも少し上げる
       rightUpperEyelid = 0.0; // 右目は開いたまま
       rightLowerEyelid = 0.0; // 右目は開いたまま
     }
@@ -1626,13 +1626,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'wink': // ウィンク
         // 軽やかな笑み（ハッピーより少し控えめ）
         p5.beginShape();
-        const winkMouthWidth = mouthWidth * 0.65; // happyより少し小さい
+        const winkMouthWidth = mouthWidth * 0.55; // 全体的な長さを短くする
         p5.vertex(p5.width / 2 - winkMouthWidth / 2, mouthY);
         p5.bezierVertex(
           p5.width / 2 - winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.9, // happyより少し浅い笑み
+          mouthY + mouthHeight * 0.8, // happyより少し浅い笑み
           p5.width / 2 + winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.9, 
+          mouthY + mouthHeight * 0.8, 
           p5.width / 2 + winkMouthWidth / 2, 
           mouthY
         );
