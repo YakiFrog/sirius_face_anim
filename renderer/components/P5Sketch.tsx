@@ -1015,7 +1015,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     if (expression === 'wink') {
       // 左目を半目に、右目は開いたまま
-      leftUpperEyelid = 0.85; // 左目を半目にする
+      leftUpperEyelid = 0.90; // 左目を半目にする
       leftLowerEyelid = 0.99; // 左目の下まぶたも少し上げる
       rightUpperEyelid = 0.0; // 右目は開いたまま
       rightLowerEyelid = 0.0; // 右目は開いたまま
@@ -1180,11 +1180,43 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       p5.endShape();
     }
     
-    // 完全に閉じている場合は目全体を黒で覆う
+    // 完全に閉じている場合は目全体を黒で覆った後、ウインクの目を描画
     if (upperLidOpenness <= 0.0 && lowerLidOpenness <= 0.0) {
       p5.fill(0);
       p5.noStroke();
       p5.ellipse(0, eyeCenterShift, eyeWidth * 1.5, eyeHeight * 1.3);
+      
+      // ウインクした目（閉じた目）の形状を描画
+      p5.stroke(255);
+      p5.strokeWeight(outlineWeight * 4.0);
+      p5.strokeCap(p5.ROUND);
+      p5.noFill();
+      
+      // ウインクした目の曲線を描画（角度をつけたウインクらしい形状）
+      // 上側の曲線（既存）
+      p5.beginShape();
+      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.10); // 左端を少し下に
+      
+      // ベジェ曲線でウインクの形状を作成（角度をつける）
+      p5.bezierVertex(
+        -eyeWidth * 0.25, eyeCenterShift - eyeHeight * 0.25,  // 制御点1（左側）
+        eyeWidth * 0.25, eyeCenterShift - eyeHeight * 0.25,   // 制御点2（右側をより上に）
+        eyeWidth * 0.25, eyeCenterShift - eyeHeight * 0.25     // 終点（右端の長さを短く）
+      );
+      p5.endShape();
+      
+      // 下側の曲線（上側を反転させた形状）
+      p5.beginShape();
+      p5.vertex(-eyeWidth * 0.5, eyeCenterShift + eyeHeight * 0.10); // 左端を少し上に
+      
+      // ベジェ曲線で下向きの形状を作成（上側を反転）
+      p5.bezierVertex(
+        -eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25,  // 制御点1（左側・下向き）
+        eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25,   // 制御点2（右側・下向き）
+        eyeWidth * 0.25, eyeCenterShift + eyeHeight * 0.25     // 終点（右端・下向き）
+      );
+      p5.endShape();
+      
     } else {
       // 目の外側に黒い縁を描画（目が開いている場合のみ）
       p5.noFill();
@@ -1225,7 +1257,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         noseY -= params.eyeSize * 0.15;
         break;
       case 'wink':
-        noseY -= params.eyeSize * 0.08; // happyより少し控えめ
+        noseY += params.eyeSize * 0.0; // happyより少し控えめ
         break;
     }
     
@@ -1324,7 +1356,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         mouthY -= params.eyeSize * 0.06;
         break;
       case 'wink':
-        mouthY -= params.eyeSize * 0.15; // happyより少し控えめな位置
+        mouthY -= params.eyeSize * 0.2; // 口をもう少し下に配置
         break;
     }
     
@@ -1594,13 +1626,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'wink': // ウィンク
         // 軽やかな笑み（ハッピーより少し控えめ）
         p5.beginShape();
-        const winkMouthWidth = mouthWidth * 0.85; // happyより少し小さい
+        const winkMouthWidth = mouthWidth * 0.65; // happyより少し小さい
         p5.vertex(p5.width / 2 - winkMouthWidth / 2, mouthY);
         p5.bezierVertex(
           p5.width / 2 - winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.8, // happyより少し浅い笑み
+          mouthY + mouthHeight * 0.9, // happyより少し浅い笑み
           p5.width / 2 + winkMouthWidth / 4, 
-          mouthY + mouthHeight * 0.8, 
+          mouthY + mouthHeight * 0.9, 
           p5.width / 2 + winkMouthWidth / 2, 
           mouthY
         );
