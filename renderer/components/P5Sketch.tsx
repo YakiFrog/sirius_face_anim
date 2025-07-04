@@ -99,6 +99,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const tapPositionRef = useRef({ x: 0, y: 0 });
   // タップ前の表情を記録するためのref
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
+  
+  // 口ぱくぱく機能のための状態
+  const [isTalking, setIsTalking] = useState(false);
+  const talkingAnimRef = useRef({
+    isActive: false,
+    phase: 'idle', // 'idle', 'talking', 'ending'
+    timer: 0, // フェーズタイマー
+    mouthState: 'closed', // 'closed', 'medium', 'large'
+    stateTimer: 0, // 状態の持続時間
+    stateDuration: 0, // 現在の状態の目標持続時間
+    endingIntensity: 0 // 終了動作の強度
+  });
 
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
@@ -574,6 +586,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 瞳の位置を更新
     updatePupilPositions(p5, eyeParams);
     
+    // 口ぱくぱくアニメーションを更新
+    updateTalkingAnimation(p5);
+    
     // 両目を描画
     drawEyes(p5, eyeParams);
 
@@ -705,6 +720,78 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // キャンバス全体をシフト（頭の動きを表現）
     p5.push();
     p5.translate(headMovement.x, headMovement.y);
+  };
+
+  // 口ぱくぱくアニメーションを更新する関数（予備動作込み）
+  const updateTalkingAnimation = (p5) => {
+    const talkingAnim = talkingAnimRef.current;
+    
+    if (talkingAnim.isActive) {
+      talkingAnim.timer++;
+      
+      switch (talkingAnim.phase) {
+        case 'talking':
+          // 口ぱくぱくフェーズ（3パターン切り替え）
+          talkingAnim.stateTimer++;
+          
+          if (talkingAnim.stateTimer >= talkingAnim.stateDuration) {
+            // 次の状態に遷移
+            talkingAnim.stateTimer = 0;
+            
+            // ランダムに次の状態を決定（より自然な口ぱくぱく）
+            const currentState = talkingAnim.mouthState;
+            const random = Math.random();
+            
+            if (currentState === 'closed') {
+              // 閉じた状態から中または大へ
+              talkingAnim.mouthState = random < 0.6 ? 'medium' : 'large';
+              talkingAnim.stateDuration = 8 + Math.random() * 12; // 8-20フレーム
+            } else if (currentState === 'medium') {
+              // 中から閉じる、大きく開く、または維持
+              if (random < 0.4) {
+                talkingAnim.mouthState = 'closed';
+                talkingAnim.stateDuration = 5 + Math.random() * 10; // 5-15フレーム
+              } else if (random < 0.7) {
+                talkingAnim.mouthState = 'large';
+                talkingAnim.stateDuration = 6 + Math.random() * 8; // 6-14フレーム
+              } else {
+                // 中を維持
+                talkingAnim.stateDuration = 8 + Math.random() * 12;
+              }
+            } else { // 'large'
+              // 大から中または閉じるへ
+              talkingAnim.mouthState = random < 0.6 ? 'medium' : 'closed';
+              talkingAnim.stateDuration = random < 0.6 ? 
+                (8 + Math.random() * 12) : // medium: 8-20フレーム
+                (5 + Math.random() * 10);  // closed: 5-15フレーム
+            }
+          }
+          break;
+          
+        case 'ending':
+          // 終了動作フェーズ（約30フレーム = 0.5秒）
+          talkingAnim.endingIntensity = Math.sin(((30 - talkingAnim.timer) / 30) * Math.PI);
+          // 徐々に閉じた状態に移行
+          if (talkingAnim.timer > 15) {
+            talkingAnim.mouthState = 'closed';
+          }
+          
+          if (talkingAnim.timer >= 30) {
+            // 終了動作完了
+            talkingAnim.phase = 'idle';
+            talkingAnim.isActive = false;
+            talkingAnim.timer = 0;
+            talkingAnim.mouthState = 'closed';
+            talkingAnim.stateTimer = 0;
+            talkingAnim.stateDuration = 0;
+            talkingAnim.endingIntensity = 0;
+            setIsTalking(false); // React状態も更新
+            setManualExpression('neutral'); // neutral表情に戻す
+            console.log('口ぱくぱく終了');
+          }
+          break;
+      }
+    }
   };
 
   // 目のパラメータを計算する関数
@@ -1252,6 +1339,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'wink':
         mouthY -= params.eyeSize * 0.3; // 口をもう少し下に配置
         break;
+      case 'talking':
+        mouthY -= params.eyeSize * 0.06; // 中性的な位置
+        break;
     }
     
     switch (expression) {
@@ -1541,6 +1631,96 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         );
         p5.endShape();
         break;
+        
+      case 'talking': // 口ぱくぱく（予備動作込み）
+        // 口ぱくぱくアニメーションを適用
+        const talkingAnim = talkingAnimRef.current;
+        const talkingMouthWidth = mouthWidth * 0.5;
+        
+        switch (talkingAnim.phase) {
+          case 'talking':
+            // 3パターンの口ぱくぱく（閉じる・中・大）
+            switch (talkingAnim.mouthState) {
+              case 'closed':
+                // 閉じた状態 - 線
+                p5.beginShape();
+                p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
+                p5.bezierVertex(
+                  p5.width / 2 - talkingMouthWidth / 4,
+                  mouthY + mouthHeight * 0.2, 
+                  p5.width / 2 + talkingMouthWidth / 4, 
+                  mouthY + mouthHeight * 0.2, 
+                  p5.width / 2 + talkingMouthWidth / 2, 
+                  mouthY
+                );
+                p5.endShape();
+                break;
+                
+              case 'medium':
+                // 中サイズの開口 - 小さめの楕円
+                p5.noStroke();
+                p5.fill(255); // 白で塗りつぶし
+                
+                const mediumWidth = talkingMouthWidth * 0.7;
+                const mediumHeight = mouthHeight * 1.2;
+                
+                p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
+                
+                // 描画設定をリセット
+                p5.stroke(255);
+                p5.noFill();
+                break;
+                
+              case 'large':
+                // 大きな開口 - 横幅を短く、縦を長く
+                p5.noStroke();
+                p5.fill(255); // 白で塗りつぶし
+                
+                const largeWidth = talkingMouthWidth * 0.6; // 1.0から0.7に縮小
+                const largeHeight = mouthHeight * 1.9; // 2.0から2.5に拡大
+                
+                p5.ellipse(p5.width / 2, mouthY, largeWidth, largeHeight);
+                
+                // 描画設定をリセット
+                p5.stroke(255);
+                p5.noFill();
+                break;
+            }
+            break;
+            
+          case 'ending':
+            // 終了動作：口を徐々に閉じながら軽く微笑む
+            const endIntensity = talkingAnim.endingIntensity;
+            const endMouthWidth = talkingMouthWidth * (1 + endIntensity * 0.3);
+            
+            p5.beginShape();
+            p5.vertex(p5.width / 2 - endMouthWidth / 2, mouthY);
+            p5.bezierVertex(
+              p5.width / 2 - endMouthWidth / 4,
+              mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
+              p5.width / 2 + endMouthWidth / 4, 
+              mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
+              p5.width / 2 + endMouthWidth / 2, 
+              mouthY
+            );
+            p5.endShape();
+            break;
+            
+          default:
+            // アイドル状態または不明な状態
+            p5.beginShape();
+            p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
+            p5.bezierVertex(
+              p5.width / 2 - talkingMouthWidth / 4,
+              mouthY + mouthHeight * 0.3, 
+              p5.width / 2 + talkingMouthWidth / 4, 
+              mouthY + mouthHeight * 0.3, 
+              p5.width / 2 + talkingMouthWidth / 2, 
+              mouthY
+            );
+            p5.endShape();
+        }
+        break;
     }
     
     // ストロークの設定をリセット
@@ -1661,23 +1841,72 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     //   if (onImagePathChange) {
     //     onImagePathChange(newImagePath);
     //   }
-    // } 
-    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '8') {
+    //    } 
+    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
       // 顔モードで数字キーが押された場合、表情を変更
-      const expressionMap: Record<string, FacialExpression> = {
-        '1': 'neutral',
-        '2': 'happy',
-        '3': 'angry',
-        '4': 'sad',
-        '5': 'surprised',
-        '6': 'crying',
-        '7': 'hurt',
-        '8': 'wink'
-      };
-      const newExpression = expressionMap[p5.key];
-      console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
-      // 通常のsetExpressionではなく、手動表情変更関数を使用
-      setManualExpression(newExpression);
+      if (p5.key === '9') {
+        // 9キーで口ぱくぱくモードのトグル
+        const newTalkingState = !isTalking;
+        setIsTalking(newTalkingState);
+        
+        if (newTalkingState) {
+          console.log('口ぱくぱくモード開始 - 即座に開始');
+          // talking表情に変更
+          setManualExpression('talking');
+          // 話すフェーズから開始
+          talkingAnimRef.current.isActive = true;
+          talkingAnimRef.current.phase = 'talking';
+          talkingAnimRef.current.timer = 0;
+          talkingAnimRef.current.mouthState = 'closed';
+          talkingAnimRef.current.stateTimer = 0;
+          talkingAnimRef.current.stateDuration = 10 + Math.random() * 20; // 10-30フレーム
+          talkingAnimRef.current.endingIntensity = 0;
+        } else {
+          console.log('口ぱくぱくモード終了 - 終了動作開始');
+          // 終了動作フェーズに移行
+          if (talkingAnimRef.current.phase === 'talking') {
+            talkingAnimRef.current.phase = 'ending';
+            talkingAnimRef.current.timer = 0;
+          } else {
+            // 即座に終了
+            setManualExpression('neutral');
+            talkingAnimRef.current.isActive = false;
+            talkingAnimRef.current.phase = 'idle';
+            talkingAnimRef.current.timer = 0;
+            talkingAnimRef.current.mouthState = 'closed';
+            talkingAnimRef.current.stateTimer = 0;
+            talkingAnimRef.current.stateDuration = 0;
+            talkingAnimRef.current.endingIntensity = 0;
+          }
+        }
+      } else {
+        const expressionMap: Record<string, FacialExpression> = {
+          '1': 'neutral',
+          '2': 'happy',
+          '3': 'angry',
+          '4': 'sad',
+          '5': 'surprised',
+          '6': 'crying',
+          '7': 'hurt',
+          '8': 'wink'
+        };
+        const newExpression = expressionMap[p5.key];
+        console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
+        // 通常のsetExpressionではなく、手動表情変更関数を使用
+        setManualExpression(newExpression);
+        
+        // 他の表情に変更された場合は口ぱくぱくモードを無効化
+        if (isTalking) {
+          setIsTalking(false);
+          talkingAnimRef.current.isActive = false;
+          talkingAnimRef.current.phase = 'idle';
+          talkingAnimRef.current.timer = 0;
+          talkingAnimRef.current.mouthState = 'closed';
+          talkingAnimRef.current.stateTimer = 0;
+          talkingAnimRef.current.stateDuration = 0;
+          talkingAnimRef.current.endingIntensity = 0;
+        }
+      }
     }
     
     // イベントの伝播を防ぐ

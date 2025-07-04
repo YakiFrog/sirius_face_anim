@@ -1,7 +1,7 @@
 // 顔の描画に関するユーティリティ関数とタイプ定義
 
 // 表情の種類
-export type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink';
+export type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'talking';
 
 // 画像表示モードの描画処理
 export const drawImageMode = (p5: any, loadedImageRef: any, imagePath: string, imageLoadError: string | null, scaleFactorRef: any, dimensions: any, imageScaleMode: string, imageOpacity: number) => {
