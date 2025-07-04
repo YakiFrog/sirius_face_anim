@@ -1661,8 +1661,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                 p5.noStroke();
                 p5.fill(255); // 白で塗りつぶし
                 
-                const mediumWidth = talkingMouthWidth * 0.7;
-                const mediumHeight = mouthHeight * 1.2;
+                const mediumWidth = talkingMouthWidth * 0.8;
+                const mediumHeight = mouthHeight * 1.0;
                 
                 p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
                 
@@ -1677,7 +1677,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                 p5.fill(255); // 白で塗りつぶし
                 
                 const largeWidth = talkingMouthWidth * 0.6; // 1.0から0.7に縮小
-                const largeHeight = mouthHeight * 1.9; // 2.0から2.5に拡大
+                const largeHeight = mouthHeight * 1.6; // 2.0から2.5に拡大
                 
                 p5.ellipse(p5.width / 2, mouthY, largeWidth, largeHeight);
                 
