@@ -528,34 +528,80 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     tapPositionRef.current = { x, y };
     
-    // より詳細なデバッグ情報を出力
-    console.log('=== タップイベント詳細 ===');
-    console.log('React state expression:', expression);
-    console.log('prevExpressionRef.current:', prevExpressionRef.current);
-    console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
-    
-    // hurt表情でない場合のみ、現在の表情を記録
-    if (prevExpressionRef.current !== 'hurt') {
-      preHurtExpressionRef.current = prevExpressionRef.current;
+    // 目のタッチ判定を行う
+    if (isInEyeArea(x, y)) {
+      console.log('=== 目の領域タップ検出 ===');
+      console.log('タップ位置:', { x, y });
+      console.log('React state expression:', expression);
+      console.log('prevExpressionRef.current:', prevExpressionRef.current);
+      console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
+      
+      // hurt表情でない場合のみ、現在の表情を記録
+      if (prevExpressionRef.current !== 'hurt') {
+        preHurtExpressionRef.current = prevExpressionRef.current;
+      }
+      // hurt表情の場合は既存の記録をそのまま保持
+      
+      console.log('記録した表情:', preHurtExpressionRef.current);
+      console.log('========================');
+      
+      // 痛がる表情に変更（手動表情変更として）
+      setManualExpression('hurt');
+      
+      // 1秒後に元の表情に戻す
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+      }
+      tapTimeoutRef.current = setTimeout(() => {
+        const restoreExpression = preHurtExpressionRef.current;
+        console.log('戻す表情:', restoreExpression);
+        // 元の表情に戻すときも手動表情変更として扱う
+        setManualExpression(restoreExpression);
+      }, 1000);
+    } else {
+      console.log('目の領域外タップ - 無視');
     }
-    // hurt表情の場合は既存の記録をそのまま保持
+  };
+
+  // タップ位置が目の領域内かどうかを判定する関数
+  const isInEyeArea = (tapX, tapY) => {
+    // 現在の目のパラメータを取得（簡易版）
+    const scaleX = dimensions.width / baseWidth;
+    const scaleY = dimensions.height / baseHeight;
+    const scaleFactor = Math.min(scaleX, scaleY);
     
-    console.log('記録した表情:', preHurtExpressionRef.current);
-    console.log('========================');
+    const baseEyeSize = baseWidth / 4.5;
+    const eyeSize = baseEyeSize * scaleFactor;
+    const eyeSpacing = eyeSize * 2.5 * currentEyeSpacingFactor;
     
-    // 痛がる表情に変更（手動表情変更として）
-    setManualExpression('hurt');
+    const leftEyeX = dimensions.width / 2 - eyeSpacing / 2;
+    const rightEyeX = dimensions.width / 2 + eyeSpacing / 2;
+    const eyeY = dimensions.height / 2;
     
-    // 1秒後に元の表情に戻す
-    if (tapTimeoutRef.current) {
-      clearTimeout(tapTimeoutRef.current);
-    }
-    tapTimeoutRef.current = setTimeout(() => {
-      const restoreExpression = preHurtExpressionRef.current;
-      console.log('戻す表情:', restoreExpression);
-      // 元の表情に戻すときも手動表情変更として扱う
-      setManualExpression(restoreExpression);
-    }, 1000);
+    // 左目の判定領域
+    const leftEyeTouchArea = {
+      x: leftEyeX - eyeSize * 0.8,
+      y: eyeY - eyeSize * 0.6,
+      width: eyeSize * 1.6,
+      height: eyeSize * 1.2
+    };
+    
+    // 右目の判定領域
+    const rightEyeTouchArea = {
+      x: rightEyeX - eyeSize * 0.8,
+      y: eyeY - eyeSize * 0.6,
+      width: eyeSize * 1.6,
+      height: eyeSize * 1.2
+    };
+    
+    // 左目または右目の領域内かどうかを判定
+    const inLeftEye = (tapX >= leftEyeTouchArea.x && tapX <= leftEyeTouchArea.x + leftEyeTouchArea.width &&
+                       tapY >= leftEyeTouchArea.y && tapY <= leftEyeTouchArea.y + leftEyeTouchArea.height);
+    
+    const inRightEye = (tapX >= rightEyeTouchArea.x && tapX <= rightEyeTouchArea.x + rightEyeTouchArea.width &&
+                        tapY >= rightEyeTouchArea.y && tapY <= rightEyeTouchArea.y + rightEyeTouchArea.height);
+    
+    return inLeftEye || inRightEye;
   };
 
   // p5のdraw関数 - 表示モードに応じて顔または画像を描画
@@ -563,12 +609,22 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 背景を黒で塗りつぶす
     p5.background(0, 0, 0);
     
+    // 目のパラメータを事前に計算（判定領域描画用）
+    let eyeParams = null;
+    
     if (displayMode === 'image') {
       // 画像表示モード
       drawImageMode(p5, loadedImageRef, imagePath, imageLoadError, scaleFactorRef, dimensions, imageScaleMode, imageOpacity);
     } else {
       // 顔表示モード（既存の処理）
       drawFaceMode(p5);
+      // 顔モードの場合は目のパラメータを取得
+      eyeParams = calculateEyeParameters(p5);
+    }
+    
+    // ★ 一番最後に判定領域を描画（他の全ての要素の上に表示）
+    if (displayMode === 'face' && eyeParams) {
+      drawEyeTouchAreas(p5, eyeParams);
     }
   };
 
@@ -722,9 +778,20 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.translate(headMovement.x, headMovement.y);
   };
 
-  // 口ぱくぱくアニメーションを更新する関数（予備動作込み）
+  // 口ぱくぱくアニメーションを更新する関数（3パターン：中・大・閉じる）
   const updateTalkingAnimation = (p5) => {
     const talkingAnim = talkingAnimRef.current;
+    
+    // デバッグ情報を定期的に出力
+    if (p5.frameCount % 60 === 0 && talkingAnim.isActive) { // 1秒ごと
+      console.log('口ぱくぱく状態:', {
+        isActive: talkingAnim.isActive,
+        phase: talkingAnim.phase,
+        mouthState: talkingAnim.mouthState,
+        stateTimer: talkingAnim.stateTimer,
+        stateDuration: talkingAnim.stateDuration
+      });
+    }
     
     if (talkingAnim.isActive) {
       talkingAnim.timer++;
@@ -1662,7 +1729,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                 p5.fill(255); // 白で塗りつぶし
                 
                 const mediumWidth = talkingMouthWidth * 0.7;
-                const mediumHeight = mouthHeight * 1.1;
+                const mediumHeight = mouthHeight * 0.9;
                 
                 p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
                 
@@ -1725,6 +1792,47 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // ストロークの設定をリセット
     p5.strokeWeight(1);
+  };
+
+  // 目のタッチ判定領域を描画する関数（デバッグ用）
+  const drawEyeTouchAreas = (p5, params) => {
+    // 描画モードをリセットしてから設定
+    p5.push(); // 描画状態を保存
+    
+    // 明確な赤色で判定領域を表示
+    p5.stroke(255, 0, 0); // 赤色、完全不透明
+    p5.fill(255, 0, 0, 80); // 赤色、半透明の塗りつぶし
+    p5.strokeWeight(3);
+    
+    // 左目の判定領域
+    const leftEyeTouchArea = {
+      x: params.leftEyeX - params.eyeSize * 0.8,
+      y: params.leftEyeY - params.eyeSize * 0.6,
+      width: params.eyeSize * 1.6,
+      height: params.eyeSize * 1.2
+    };
+    
+    // 右目の判定領域
+    const rightEyeTouchArea = {
+      x: params.rightEyeX - params.eyeSize * 0.8,
+      y: params.rightEyeY - params.eyeSize * 0.6,
+      width: params.eyeSize * 1.6,
+      height: params.eyeSize * 1.2
+    };
+    
+    // 判定領域を矩形で描画
+    p5.rect(leftEyeTouchArea.x, leftEyeTouchArea.y, leftEyeTouchArea.width, leftEyeTouchArea.height);
+    p5.rect(rightEyeTouchArea.x, rightEyeTouchArea.y, rightEyeTouchArea.width, rightEyeTouchArea.height);
+    
+    // デバッグ用のラベルも追加
+    p5.fill(255); // 白色のテキスト
+    p5.noStroke();
+    p5.textAlign(p5.CENTER, p5.CENTER);
+    p5.textSize(16 * scaleFactorRef.current);
+    p5.text('L', params.leftEyeX, params.leftEyeY + params.eyeSize * 0.8);
+    p5.text('R', params.rightEyeX, params.rightEyeY + params.eyeSize * 0.8);
+    
+    p5.pop(); // 描画状態を復元
   };
 
   // 流れる涙を描画する関数
@@ -1847,6 +1955,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       if (p5.key === '9') {
         // 9キーで口ぱくぱくモードのトグル
         const newTalkingState = !isTalking;
+        console.log(`9キー押下: 現在のisTalking=${isTalking}, 新しい状態=${newTalkingState}`);
+        console.log('現在のtalkingAnimRef状態:', talkingAnimRef.current);
+        
         setIsTalking(newTalkingState);
         
         if (newTalkingState) {
@@ -1861,14 +1972,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           talkingAnimRef.current.stateTimer = 0;
           talkingAnimRef.current.stateDuration = 10 + Math.random() * 20; // 10-30フレーム
           talkingAnimRef.current.endingIntensity = 0;
+          console.log('口ぱくぱく初期化完了:', talkingAnimRef.current);
         } else {
           console.log('口ぱくぱくモード終了 - 終了動作開始');
           // 終了動作フェーズに移行
           if (talkingAnimRef.current.phase === 'talking') {
             talkingAnimRef.current.phase = 'ending';
             talkingAnimRef.current.timer = 0;
+            console.log('終了フェーズに移行');
           } else {
             // 即座に終了
+            console.log('即座に終了');
             setManualExpression('neutral');
             talkingAnimRef.current.isActive = false;
             talkingAnimRef.current.phase = 'idle';
