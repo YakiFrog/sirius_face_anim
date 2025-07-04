@@ -26,6 +26,12 @@ interface P5SketchProps {
   // 画像モード切り替えのコールバック
   onDisplayModeToggle?: () => void;
   onImagePathChange?: (path: string) => void; // 画像パス変更のコールバック
+  // ランダム表情変更のための新しいプロパティ
+  enableRandomExpression?: boolean; // ランダム表情変更を有効にするかどうか
+  randomExpressionList?: FacialExpression[]; // ランダム対象の表情リスト
+  randomIntervalMin?: number; // 最小間隔（秒）
+  randomIntervalMax?: number; // 最大間隔（秒）
+  onRandomExpressionChange?: (isActive: boolean) => void; // ランダムモード状態変更のコールバック
 }
 
 export const P5Sketch: React.FC<P5SketchProps> = ({ 
@@ -41,7 +47,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   imageScaleMode = 'fit', // デフォルトはfitモード
   imageOpacity = 1.0, // デフォルトは完全不透明
   onDisplayModeToggle, // コールバック関数を追加
-  onImagePathChange // 画像パス変更のコールバック
+  onImagePathChange, // 画像パス変更のコールバック
+  // ランダム表情変更のためのプロパティ
+  enableRandomExpression = false, // デフォルトでは無効
+  randomExpressionList = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'wink'], // デフォルトの表情リスト
+  randomIntervalMin = 1, // 最小間隔1秒
+  randomIntervalMax = 5, // 最大間隔5秒
+  onRandomExpressionChange // ランダムモード状態変更のコールバック
 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,12 +125,37 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   });
 
   // ランダム表情変更のための状態
-  const [isRandomExpressionMode, setIsRandomExpressionMode] = useState(false);
+  const [isRandomExpressionMode, setIsRandomExpressionMode] = useState(enableRandomExpression);
   const randomExpressionRef = useRef({
-    isActive: false,
+    isActive: enableRandomExpression,
     nextChangeTime: 0,
     currentTime: 0
   });
+
+  // enableRandomExpressionプロパティの変更を監視して状態を同期
+  useEffect(() => {
+    setIsRandomExpressionMode(enableRandomExpression);
+    randomExpressionRef.current.isActive = enableRandomExpression;
+    
+    if (enableRandomExpression) {
+      // ランダムモードが有効になった場合、初期の変更時間を設定
+      const minFrames = randomIntervalMin * 60; // 秒をフレームに変換（60fps想定）
+      const maxFrames = randomIntervalMax * 60;
+      randomExpressionRef.current.nextChangeTime = randomExpressionRef.current.currentTime + 
+        minFrames + Math.random() * (maxFrames - minFrames);
+      console.log(`プロパティからランダム表情モード開始 - 最初の変更まで: ${Math.round((randomExpressionRef.current.nextChangeTime - randomExpressionRef.current.currentTime) / 60 * 10) / 10}秒`);
+    } else {
+      // ランダムモードが無効になった場合、リセット
+      randomExpressionRef.current.currentTime = 0;
+      randomExpressionRef.current.nextChangeTime = 0;
+      console.log('プロパティからランダム表情モード無効');
+    }
+    
+    // 親コンポーネントに状態変更を通知
+    if (onRandomExpressionChange) {
+      onRandomExpressionChange(enableRandomExpression);
+    }
+  }, [enableRandomExpression, randomIntervalMin, randomIntervalMax, onRandomExpressionChange]);
 
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
@@ -620,16 +657,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       
       // 次の変更時間に達したら表情を変更
       if (randomExpressionRef.current.currentTime >= randomExpressionRef.current.nextChangeTime) {
-        // ランダムな表情を選択（talkingは除外）
-        const expressions: FacialExpression[] = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink'];
-        const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+        // カスタマイズされた表情リストからランダムに選択
+        const availableExpressions = randomExpressionList.filter(expr => expr !== 'talking'); // talkingは除外
+        const randomExpression = availableExpressions[Math.floor(Math.random() * availableExpressions.length)];
         
         console.log(`ランダム表情変更: ${randomExpression}`);
         setManualExpression(randomExpression);
         
-        // 次の変更時間をランダムに設定（1秒〜5秒）
-        const minFrames = 60; // 1秒（60fps想定）
-        const maxFrames = 300; // 5秒
+        // 次の変更時間をカスタマイズされた間隔でランダムに設定
+        const minFrames = randomIntervalMin * 60; // 秒をフレームに変換（60fps想定）
+        const maxFrames = randomIntervalMax * 60;
         randomExpressionRef.current.nextChangeTime = randomExpressionRef.current.currentTime + 
           minFrames + Math.random() * (maxFrames - minFrames);
         
@@ -1767,8 +1804,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                 p5.noStroke();
                 p5.fill(255); // 白で塗りつぶし
                 
-                const mediumWidth = talkingMouthWidth * 0.7;
-                const mediumHeight = mouthHeight * 0.9;
+                const mediumWidth = talkingMouthWidth * 0.8;
+                const mediumHeight = mouthHeight * 0.6;
                 
                 p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
                 
@@ -1783,7 +1820,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                 p5.fill(255); // 白で塗りつぶし
                 
                 const largeWidth = talkingMouthWidth * 0.6; // 1.0から0.7に縮小
-                const largeHeight = mouthHeight * 1.6; // 2.0から2.5に拡大
+                const largeHeight = mouthHeight * 1.3; // 2.0から2.5に拡大
                 
                 p5.ellipse(p5.width / 2, mouthY, largeWidth, largeHeight);
                 
@@ -2103,11 +2140,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         // ランダムモード開始
         randomExpressionRef.current.isActive = true;
         randomExpressionRef.current.currentTime = 0;
-        // 最初の変更時間をランダムに設定（0.5秒〜3秒）
-        const minFrames = 30; // 0.5秒
-        const maxFrames = 180; // 3秒
+        // カスタマイズされた間隔で最初の変更時間を設定
+        const minFrames = randomIntervalMin * 60; // 秒をフレームに変換
+        const maxFrames = randomIntervalMax * 60;
         randomExpressionRef.current.nextChangeTime = minFrames + Math.random() * (maxFrames - minFrames);
         console.log(`ランダム表情変更モード開始 - 最初の変更まで: ${Math.round(randomExpressionRef.current.nextChangeTime / 60 * 10) / 10}秒`);
+        
+        // 親コンポーネントに状態変更を通知
+        if (onRandomExpressionChange) {
+          onRandomExpressionChange(true);
+        }
       } else {
         // ランダムモード終了
         randomExpressionRef.current.isActive = false;
@@ -2116,6 +2158,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         console.log('ランダム表情変更モード終了');
         // neutralに戻す
         setManualExpression('neutral');
+        
+        // 親コンポーネントに状態変更を通知
+        if (onRandomExpressionChange) {
+          onRandomExpressionChange(false);
+        }
       }
       
       // 他のモードを無効化
