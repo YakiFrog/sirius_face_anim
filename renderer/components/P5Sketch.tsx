@@ -112,6 +112,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     endingIntensity: 0 // 終了動作の強度
   });
 
+  // ランダム表情変更のための状態
+  const [isRandomExpressionMode, setIsRandomExpressionMode] = useState(false);
+  const randomExpressionRef = useRef({
+    isActive: false,
+    nextChangeTime: 0,
+    currentTime: 0
+  });
+
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
     // ROS2接続が有効でない場合は何もしない
@@ -606,6 +614,37 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // p5のdraw関数 - 表示モードに応じて顔または画像を描画
   const draw = (p5) => {
+    // ランダム表情変更の処理
+    if (randomExpressionRef.current.isActive) {
+      randomExpressionRef.current.currentTime++;
+      
+      // 次の変更時間に達したら表情を変更
+      if (randomExpressionRef.current.currentTime >= randomExpressionRef.current.nextChangeTime) {
+        // ランダムな表情を選択（talkingは除外）
+        const expressions: FacialExpression[] = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink'];
+        const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+        
+        console.log(`ランダム表情変更: ${randomExpression}`);
+        setManualExpression(randomExpression);
+        
+        // 次の変更時間をランダムに設定（1秒〜5秒）
+        const minFrames = 60; // 1秒（60fps想定）
+        const maxFrames = 300; // 5秒
+        randomExpressionRef.current.nextChangeTime = randomExpressionRef.current.currentTime + 
+          minFrames + Math.random() * (maxFrames - minFrames);
+        
+        console.log(`次の変更まで: ${Math.round((randomExpressionRef.current.nextChangeTime - randomExpressionRef.current.currentTime) / 60 * 10) / 10}秒`);
+      }
+    }
+    
+    // 状態の同期チェック（isRandomExpressionModeとrefの不整合を防ぐ）
+    if (isRandomExpressionMode !== randomExpressionRef.current.isActive) {
+      console.log(`状態の不整合を検出: isRandomExpressionMode=${isRandomExpressionMode}, ref.isActive=${randomExpressionRef.current.isActive}`);
+      if (!randomExpressionRef.current.isActive) {
+        setIsRandomExpressionMode(false);
+      }
+    }
+
     // 背景を黒で塗りつぶす
     p5.background(0, 0, 0);
     
@@ -1973,6 +2012,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           talkingAnimRef.current.stateDuration = 10 + Math.random() * 20; // 10-30フレーム
           talkingAnimRef.current.endingIntensity = 0;
           console.log('口ぱくぱく初期化完了:', talkingAnimRef.current);
+          
+          // ランダム表情変更モードを無効化
+          if (randomExpressionRef.current.isActive) {
+            setIsRandomExpressionMode(false);
+            randomExpressionRef.current.isActive = false;
+            randomExpressionRef.current.currentTime = 0;
+            randomExpressionRef.current.nextChangeTime = 0;
+            console.log('口ぱくぱくモード開始によりランダムモードを無効化');
+          }
         } else {
           console.log('口ぱくぱくモード終了 - 終了動作開始');
           // 終了動作フェーズに移行
@@ -2020,6 +2068,66 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           talkingAnimRef.current.stateDuration = 0;
           talkingAnimRef.current.endingIntensity = 0;
         }
+        
+        // ランダム表情変更モードを無効化
+        if (randomExpressionRef.current.isActive) {
+          setIsRandomExpressionMode(false);
+          randomExpressionRef.current.isActive = false;
+          randomExpressionRef.current.currentTime = 0;
+          randomExpressionRef.current.nextChangeTime = 0;
+          console.log('手動表情変更によりランダムモードを無効化');
+        }
+        
+        // 他の表情に変更された場合は口ぱくぱくモードを無効化
+        if (isTalking) {
+          setIsTalking(false);
+          talkingAnimRef.current.isActive = false;
+          talkingAnimRef.current.phase = 'idle';
+          talkingAnimRef.current.timer = 0;
+          talkingAnimRef.current.mouthState = 'closed';
+          talkingAnimRef.current.stateTimer = 0;
+          talkingAnimRef.current.stateDuration = 0;
+          talkingAnimRef.current.endingIntensity = 0;
+        }
+      }
+    } else if (displayMode === 'face' && p5.key === '0') {
+      // 0キーでランダム表情変更モードのトグル
+      const newRandomMode = !randomExpressionRef.current.isActive;
+      console.log(`0キー押下: ランダム表情変更モード ${newRandomMode ? 'ON' : 'OFF'}`);
+      console.log(`現在のisRandomExpressionMode: ${isRandomExpressionMode}`);
+      console.log(`現在のrandomExpressionRef.current.isActive: ${randomExpressionRef.current.isActive}`);
+      
+      setIsRandomExpressionMode(newRandomMode);
+      
+      if (newRandomMode) {
+        // ランダムモード開始
+        randomExpressionRef.current.isActive = true;
+        randomExpressionRef.current.currentTime = 0;
+        // 最初の変更時間をランダムに設定（0.5秒〜3秒）
+        const minFrames = 30; // 0.5秒
+        const maxFrames = 180; // 3秒
+        randomExpressionRef.current.nextChangeTime = minFrames + Math.random() * (maxFrames - minFrames);
+        console.log(`ランダム表情変更モード開始 - 最初の変更まで: ${Math.round(randomExpressionRef.current.nextChangeTime / 60 * 10) / 10}秒`);
+      } else {
+        // ランダムモード終了
+        randomExpressionRef.current.isActive = false;
+        randomExpressionRef.current.currentTime = 0;
+        randomExpressionRef.current.nextChangeTime = 0;
+        console.log('ランダム表情変更モード終了');
+        // neutralに戻す
+        setManualExpression('neutral');
+      }
+      
+      // 他のモードを無効化
+      if (isTalking) {
+        setIsTalking(false);
+        talkingAnimRef.current.isActive = false;
+        talkingAnimRef.current.phase = 'idle';
+        talkingAnimRef.current.timer = 0;
+        talkingAnimRef.current.mouthState = 'closed';
+        talkingAnimRef.current.stateTimer = 0;
+        talkingAnimRef.current.stateDuration = 0;
+        talkingAnimRef.current.endingIntensity = 0;
       }
     }
     
