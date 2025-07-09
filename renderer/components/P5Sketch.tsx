@@ -32,6 +32,10 @@ interface P5SketchProps {
   randomIntervalMin?: number; // 最小間隔（秒）
   randomIntervalMax?: number; // 最大間隔（秒）
   onRandomExpressionChange?: (isActive: boolean) => void; // ランダムモード状態変更のコールバック
+  // 音声連携のための新しいプロパティ
+  enableVoiceSync?: boolean; // 音声連携を有効にするかどうか
+  lipSyncData?: { volume: number; vowel: string; openness: number; isPlaying: boolean }; // リップシンクデータ
+  onVoiceSyncStateChange?: (isActive: boolean) => void; // 音声連携状態変更のコールバック
 }
 
 export const P5Sketch: React.FC<P5SketchProps> = ({ 
@@ -53,7 +57,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   randomExpressionList = ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'wink'], // デフォルトの表情リスト
   randomIntervalMin = 1, // 最小間隔1秒
   randomIntervalMax = 5, // 最大間隔5秒
-  onRandomExpressionChange // ランダムモード状態変更のコールバック
+  onRandomExpressionChange, // ランダムモード状態変更のコールバック
+  // 音声連携のためのプロパティ
+  enableVoiceSync = false, // デフォルトでは無効
+  lipSyncData, // リップシンクデータ
+  onVoiceSyncStateChange // 音声連携状態変更のコールバック
 }) => {
   const [dimensions, setDimensions] = useState({ width, height });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,6 +132,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     endingIntensity: 0 // 終了動作の強度
   });
 
+  // 音声連携のための状態
+  const [isVoiceSyncMode, setIsVoiceSyncMode] = useState(enableVoiceSync);
+  const voiceSyncRef = useRef({
+    isActive: enableVoiceSync,
+    lastVolume: 0,
+    smoothedVolume: 0,
+    mouthOpenness: 0,
+    vowel: 'neutral'
+  });
+
   // ランダム表情変更のための状態
   const [isRandomExpressionMode, setIsRandomExpressionMode] = useState(enableRandomExpression);
   const randomExpressionRef = useRef({
@@ -131,6 +149,69 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     nextChangeTime: 0,
     currentTime: 0
   });
+
+  // enableVoiceSyncプロパティの変更を監視して状態を同期
+  useEffect(() => {
+    setIsVoiceSyncMode(enableVoiceSync);
+    voiceSyncRef.current.isActive = enableVoiceSync;
+    
+    if (enableVoiceSync) {
+      console.log('音声連携モード開始');
+      // 他のモードを無効化
+      setIsTalking(false);
+      talkingAnimRef.current.isActive = false;
+      talkingAnimRef.current.phase = 'idle';
+      
+      setIsRandomExpressionMode(false);
+      randomExpressionRef.current.isActive = false;
+    } else {
+      console.log('音声連携モード無効');
+      voiceSyncRef.current.lastVolume = 0;
+      voiceSyncRef.current.smoothedVolume = 0;
+      voiceSyncRef.current.mouthOpenness = 0;
+      voiceSyncRef.current.vowel = 'neutral';
+    }
+    
+    // 親コンポーネントに状態変更を通知
+    if (onVoiceSyncStateChange) {
+      onVoiceSyncStateChange(enableVoiceSync);
+    }
+  }, [enableVoiceSync, onVoiceSyncStateChange]);
+
+  // リップシンクデータの変更を監視
+  useEffect(() => {
+    if (enableVoiceSync && lipSyncData) {
+      const smoothingFactor = 0.7;
+      
+      // 音量をスムージング
+      voiceSyncRef.current.smoothedVolume = 
+        voiceSyncRef.current.smoothedVolume * smoothingFactor + 
+        lipSyncData.volume * (1 - smoothingFactor);
+      
+      voiceSyncRef.current.lastVolume = lipSyncData.volume;
+      voiceSyncRef.current.mouthOpenness = lipSyncData.openness;
+      voiceSyncRef.current.vowel = lipSyncData.vowel;
+      
+      // 音声が再生中の場合はtalking表情に変更
+      if (lipSyncData.isPlaying && lipSyncData.volume > 0.1) {
+        if (expression !== 'talking') {
+          setManualExpression('talking');
+        }
+        // 口ぱくぱくモードを有効化
+        if (!talkingAnimRef.current.isActive) {
+          talkingAnimRef.current.isActive = true;
+          talkingAnimRef.current.phase = 'talking';
+          setIsTalking(true);
+        }
+      } else if (!lipSyncData.isPlaying) {
+        // 音声が停止した場合はneutralに戻す
+        if (talkingAnimRef.current.isActive) {
+          talkingAnimRef.current.phase = 'ending';
+          talkingAnimRef.current.timer = 0;
+        }
+      }
+    }
+  }, [enableVoiceSync, lipSyncData, expression]);
 
   // enableRandomExpressionプロパティの変更を監視して状態を同期
   useEffect(() => {
@@ -857,6 +938,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // 口ぱくぱくアニメーションを更新する関数（3パターン：中・大・閉じる）
   const updateTalkingAnimation = (p5) => {
     const talkingAnim = talkingAnimRef.current;
+    const voiceSync = voiceSyncRef.current;
     
     // デバッグ情報を定期的に出力
     if (p5.frameCount % 60 === 0 && talkingAnim.isActive) { // 1秒ごと
@@ -865,74 +947,104 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         phase: talkingAnim.phase,
         mouthState: talkingAnim.mouthState,
         stateTimer: talkingAnim.stateTimer,
-        stateDuration: talkingAnim.stateDuration
+        stateDuration: talkingAnim.stateDuration,
+        voiceSyncMode: voiceSync.isActive,
+        volume: voiceSync.smoothedVolume
       });
     }
     
     if (talkingAnim.isActive) {
       talkingAnim.timer++;
       
-      switch (talkingAnim.phase) {
-        case 'talking':
-          // 口ぱくぱくフェーズ（3パターン切り替え）
-          talkingAnim.stateTimer++;
-          
-          if (talkingAnim.stateTimer >= talkingAnim.stateDuration) {
-            // 次の状態に遷移
-            talkingAnim.stateTimer = 0;
+      // 音声連携モードの場合
+      if (voiceSync.isActive && lipSyncData) {
+        // 音声解析データに基づいて口の状態を決定
+        const volume = voiceSync.smoothedVolume;
+        const openness = voiceSync.mouthOpenness;
+        
+        if (volume > 0.15) {
+          // 音量に応じて口の開き方を決定
+          if (openness > 0.7) {
+            talkingAnim.mouthState = 'large';
+          } else if (openness > 0.3) {
+            talkingAnim.mouthState = 'medium';
+          } else {
+            talkingAnim.mouthState = 'closed';
+          }
+        } else {
+          talkingAnim.mouthState = 'closed';
+        }
+        
+        // 音声が停止した場合は終了フェーズに移行
+        if (!lipSyncData.isPlaying && talkingAnim.phase === 'talking') {
+          talkingAnim.phase = 'ending';
+          talkingAnim.timer = 0;
+        }
+      } else {
+        // 従来の自動口ぱくぱくモード
+        switch (talkingAnim.phase) {
+          case 'talking':
+            // 口ぱくぱくフェーズ（3パターン切り替え）
+            talkingAnim.stateTimer++;
             
-            // ランダムに次の状態を決定（より自然な口ぱくぱく）
-            const currentState = talkingAnim.mouthState;
-            const random = Math.random();
-            
-            if (currentState === 'closed') {
-              // 閉じた状態から中または大へ
-              talkingAnim.mouthState = random < 0.6 ? 'medium' : 'large';
-              talkingAnim.stateDuration = 8 + Math.random() * 12; // 8-20フレーム
-            } else if (currentState === 'medium') {
-              // 中から閉じる、大きく開く、または維持
-              if (random < 0.4) {
-                talkingAnim.mouthState = 'closed';
-                talkingAnim.stateDuration = 5 + Math.random() * 10; // 5-15フレーム
-              } else if (random < 0.7) {
-                talkingAnim.mouthState = 'large';
-                talkingAnim.stateDuration = 6 + Math.random() * 8; // 6-14フレーム
-              } else {
-                // 中を維持
-                talkingAnim.stateDuration = 8 + Math.random() * 12;
+            if (talkingAnim.stateTimer >= talkingAnim.stateDuration) {
+              // 次の状態に遷移
+              talkingAnim.stateTimer = 0;
+              
+              // ランダムに次の状態を決定（より自然な口ぱくぱく）
+              const currentState = talkingAnim.mouthState;
+              const random = Math.random();
+              
+              if (currentState === 'closed') {
+                // 閉じた状態から中または大へ
+                talkingAnim.mouthState = random < 0.6 ? 'medium' : 'large';
+                talkingAnim.stateDuration = 8 + Math.random() * 12; // 8-20フレーム
+              } else if (currentState === 'medium') {
+                // 中から閉じる、大きく開く、または維持
+                if (random < 0.4) {
+                  talkingAnim.mouthState = 'closed';
+                  talkingAnim.stateDuration = 5 + Math.random() * 10; // 5-15フレーム
+                } else if (random < 0.7) {
+                  talkingAnim.mouthState = 'large';
+                  talkingAnim.stateDuration = 6 + Math.random() * 8; // 6-14フレーム
+                } else {
+                  // 中を維持
+                  talkingAnim.stateDuration = 8 + Math.random() * 12;
+                }
+              } else { // 'large'
+                // 大から中または閉じるへ
+                talkingAnim.mouthState = random < 0.6 ? 'medium' : 'closed';
+                talkingAnim.stateDuration = random < 0.6 ? 
+                  (8 + Math.random() * 12) : // medium: 8-20フレーム
+                  (5 + Math.random() * 10);  // closed: 5-15フレーム
               }
-            } else { // 'large'
-              // 大から中または閉じるへ
-              talkingAnim.mouthState = random < 0.6 ? 'medium' : 'closed';
-              talkingAnim.stateDuration = random < 0.6 ? 
-                (8 + Math.random() * 12) : // medium: 8-20フレーム
-                (5 + Math.random() * 10);  // closed: 5-15フレーム
             }
-          }
-          break;
-          
-        case 'ending':
-          // 終了動作フェーズ（約30フレーム = 0.5秒）
-          talkingAnim.endingIntensity = Math.sin(((30 - talkingAnim.timer) / 30) * Math.PI);
-          // 徐々に閉じた状態に移行
-          if (talkingAnim.timer > 15) {
-            talkingAnim.mouthState = 'closed';
-          }
-          
-          if (talkingAnim.timer >= 30) {
-            // 終了動作完了
-            talkingAnim.phase = 'idle';
-            talkingAnim.isActive = false;
-            talkingAnim.timer = 0;
-            talkingAnim.mouthState = 'closed';
-            talkingAnim.stateTimer = 0;
-            talkingAnim.stateDuration = 0;
-            talkingAnim.endingIntensity = 0;
-            setIsTalking(false); // React状態も更新
-            setManualExpression('neutral'); // neutral表情に戻す
-            console.log('口ぱくぱく終了');
-          }
-          break;
+            break;
+        }
+      }
+      
+      // 終了動作フェーズ（共通）
+      if (talkingAnim.phase === 'ending') {
+        // 終了動作フェーズ（約30フレーム = 0.5秒）
+        talkingAnim.endingIntensity = Math.sin(((30 - talkingAnim.timer) / 30) * Math.PI);
+        // 徐々に閉じた状態に移行
+        if (talkingAnim.timer > 15) {
+          talkingAnim.mouthState = 'closed';
+        }
+        
+        if (talkingAnim.timer >= 30) {
+          // 終了動作完了
+          talkingAnim.phase = 'idle';
+          talkingAnim.isActive = false;
+          talkingAnim.timer = 0;
+          talkingAnim.mouthState = 'closed';
+          talkingAnim.stateTimer = 0;
+          talkingAnim.stateDuration = 0;
+          talkingAnim.endingIntensity = 0;
+          setIsTalking(false); // React状態も更新
+          setManualExpression('neutral'); // neutral表情に戻す
+          console.log('口ぱくぱく終了');
+        }
       }
     }
   };
@@ -1773,19 +1885,77 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           p5.width / 2.0 + winkMouthWidth / 2.0, rightY // 右端
         );
         p5.endShape();
-        break;
-        
-      case 'talking': // 口ぱくぱく（予備動作込み）
-        // 口ぱくぱくアニメーションを適用
-        const talkingAnim = talkingAnimRef.current;
-        const talkingMouthWidth = mouthWidth * 0.5;
-        
-        switch (talkingAnim.phase) {
-          case 'talking':
-            // 3パターンの口ぱくぱく（閉じる・中・大）
-            switch (talkingAnim.mouthState) {
-              case 'closed':
-                // 閉じた状態 - 線
+        break;        case 'talking': // 口ぱくぱく（予備動作込み）
+          // 口ぱくぱくアニメーションを適用
+          const talkingAnim = talkingAnimRef.current;
+          const voiceSync = voiceSyncRef.current;
+          const talkingMouthWidth = mouthWidth * 0.5;
+          
+          // 音声連携モードの場合、母音に応じて口の形を変更
+          if (voiceSync.isActive && lipSyncData) {
+            const vowel = voiceSync.vowel;
+            const openness = voiceSync.mouthOpenness;
+            
+            switch (vowel) {
+              case 'a': // ア - 大きく縦に開く
+                p5.noStroke();
+                p5.fill(255);
+                const aWidth = talkingMouthWidth * (0.8 + openness * 0.4);
+                const aHeight = mouthHeight * (1.0 + openness * 1.5);
+                p5.ellipse(p5.width / 2, mouthY, aWidth, aHeight);
+                break;
+                
+              case 'i': // イ - 横に広く、縦は狭く
+                p5.beginShape();
+                const iWidth = talkingMouthWidth * (1.0 + openness * 0.5);
+                const iHeight = mouthHeight * (0.3 + openness * 0.2);
+                p5.vertex(p5.width / 2 - iWidth / 2, mouthY);
+                p5.bezierVertex(
+                  p5.width / 2 - iWidth / 4,
+                  mouthY + iHeight, 
+                  p5.width / 2 + iWidth / 4, 
+                  mouthY + iHeight, 
+                  p5.width / 2 + iWidth / 2, 
+                  mouthY
+                );
+                p5.endShape();
+                break;
+                
+              case 'u': // ウ - 小さく丸く
+                p5.noStroke();
+                p5.fill(255);
+                const uWidth = talkingMouthWidth * (0.4 + openness * 0.2);
+                const uHeight = mouthHeight * (0.6 + openness * 0.4);
+                p5.ellipse(p5.width / 2, mouthY, uWidth, uHeight);
+                break;
+                
+              case 'e': // エ - やや開く
+                p5.beginShape();
+                const eWidth = talkingMouthWidth * (0.7 + openness * 0.3);
+                const eHeight = mouthHeight * (0.5 + openness * 0.3);
+                p5.vertex(p5.width / 2 - eWidth / 2, mouthY);
+                p5.bezierVertex(
+                  p5.width / 2 - eWidth / 4,
+                  mouthY + eHeight, 
+                  p5.width / 2 + eWidth / 4, 
+                  mouthY + eHeight, 
+                  p5.width / 2 + eWidth / 2, 
+                  mouthY
+                );
+                p5.endShape();
+                break;
+                
+              case 'o': // オ - 丸く開く
+                p5.noStroke();
+                p5.fill(255);
+                const oWidth = talkingMouthWidth * (0.6 + openness * 0.3);
+                const oHeight = mouthHeight * (0.8 + openness * 0.7);
+                p5.ellipse(p5.width / 2, mouthY, oWidth, oHeight);
+                break;
+                
+              case 'silent':
+              default:
+                // 無音または不明な場合は閉じた口
                 p5.beginShape();
                 p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
                 p5.bezierVertex(
@@ -1797,73 +1967,98 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
                   mouthY
                 );
                 p5.endShape();
-                break;
-                
-              case 'medium':
-                // 中サイズの開口 - 小さめの楕円
-                p5.noStroke();
-                p5.fill(255); // 白で塗りつぶし
-                
-                const mediumWidth = talkingMouthWidth * 0.8;
-                const mediumHeight = mouthHeight * 0.6;
-                
-                p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
-                
-                // 描画設定をリセット
-                p5.stroke(255);
-                p5.noFill();
-                break;
-                
-              case 'large':
-                // 大きな開口 - 横幅を短く、縦を長く
-                p5.noStroke();
-                p5.fill(255); // 白で塗りつぶし
-                
-                const largeWidth = talkingMouthWidth * 0.6; // 1.0から0.7に縮小
-                const largeHeight = mouthHeight * 1.3; // 2.0から2.5に拡大
-                
-                p5.ellipse(p5.width / 2, mouthY, largeWidth, largeHeight);
-                
-                // 描画設定をリセット
-                p5.stroke(255);
-                p5.noFill();
-                break;
             }
-            break;
             
-          case 'ending':
-            // 終了動作：口を徐々に閉じながら軽く微笑む
-            const endIntensity = talkingAnim.endingIntensity;
-            const endMouthWidth = talkingMouthWidth * (1 + endIntensity * 0.3);
-            
-            p5.beginShape();
-            p5.vertex(p5.width / 2 - endMouthWidth / 2, mouthY);
-            p5.bezierVertex(
-              p5.width / 2 - endMouthWidth / 4,
-              mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
-              p5.width / 2 + endMouthWidth / 4, 
-              mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
-              p5.width / 2 + endMouthWidth / 2, 
-              mouthY
-            );
-            p5.endShape();
-            break;
-            
-          default:
-            // アイドル状態または不明な状態
-            p5.beginShape();
-            p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
-            p5.bezierVertex(
-              p5.width / 2 - talkingMouthWidth / 4,
-              mouthY + mouthHeight * 0.3, 
-              p5.width / 2 + talkingMouthWidth / 4, 
-              mouthY + mouthHeight * 0.3, 
-              p5.width / 2 + talkingMouthWidth / 2, 
-              mouthY
-            );
-            p5.endShape();
-        }
-        break;
+            // 描画設定をリセット
+            p5.stroke(255);
+            p5.noFill();
+          } else {
+            // 従来の自動口ぱくぱくモード
+            switch (talkingAnim.phase) {
+              case 'talking':
+                // 3パターンの口ぱくぱく（閉じる・中・大）
+                switch (talkingAnim.mouthState) {
+                  case 'closed':
+                    // 閉じた状態 - 線
+                    p5.beginShape();
+                    p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
+                    p5.bezierVertex(
+                      p5.width / 2 - talkingMouthWidth / 4,
+                      mouthY + mouthHeight * 0.2, 
+                      p5.width / 2 + talkingMouthWidth / 4, 
+                      mouthY + mouthHeight * 0.2, 
+                      p5.width / 2 + talkingMouthWidth / 2, 
+                      mouthY
+                    );
+                    p5.endShape();
+                    break;
+                    
+                  case 'medium':
+                    // 中サイズの開口 - 小さめの楕円
+                    p5.noStroke();
+                    p5.fill(255); // 白で塗りつぶし
+                    
+                    const mediumWidth = talkingMouthWidth * 0.8;
+                    const mediumHeight = mouthHeight * 0.6;
+                    
+                    p5.ellipse(p5.width / 2, mouthY, mediumWidth, mediumHeight);
+                    
+                    // 描画設定をリセット
+                    p5.stroke(255);
+                    p5.noFill();
+                    break;
+                    
+                  case 'large':
+                    // 大きな開口 - 横幅を短く、縦を長く
+                    p5.noStroke();
+                    p5.fill(255); // 白で塗りつぶし
+                    
+                    const largeWidth = talkingMouthWidth * 0.6; // 1.0から0.7に縮小
+                    const largeHeight = mouthHeight * 1.3; // 2.0から2.5に拡大
+                    
+                    p5.ellipse(p5.width / 2, mouthY, largeWidth, largeHeight);
+                    
+                    // 描画設定をリセット
+                    p5.stroke(255);
+                    p5.noFill();
+                    break;
+                }
+                break;
+                
+              case 'ending':
+                // 終了動作：口を徐々に閉じながら軽く微笑む
+                const endIntensity = talkingAnim.endingIntensity;
+                const endMouthWidth = talkingMouthWidth * (1 + endIntensity * 0.3);
+                
+                p5.beginShape();
+                p5.vertex(p5.width / 2 - endMouthWidth / 2, mouthY);
+                p5.bezierVertex(
+                  p5.width / 2 - endMouthWidth / 4,
+                  mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
+                  p5.width / 2 + endMouthWidth / 4, 
+                  mouthY + mouthHeight * (0.3 + endIntensity * 0.4), 
+                  p5.width / 2 + endMouthWidth / 2, 
+                  mouthY
+                );
+                p5.endShape();
+                break;
+                
+              default:
+                // アイドル状態または不明な状態
+                p5.beginShape();
+                p5.vertex(p5.width / 2 - talkingMouthWidth / 2, mouthY);
+                p5.bezierVertex(
+                  p5.width / 2 - talkingMouthWidth / 4,
+                  mouthY + mouthHeight * 0.3, 
+                  p5.width / 2 + talkingMouthWidth / 4, 
+                  mouthY + mouthHeight * 0.3, 
+                  p5.width / 2 + talkingMouthWidth / 2, 
+                  mouthY
+                );
+                p5.endShape();
+            }
+          }
+          break;
     }
     
     // ストロークの設定をリセット

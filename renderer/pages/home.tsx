@@ -2,10 +2,18 @@ import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 
 import { P5Sketch } from '../components/P5Sketch'
+import { ZundamonVoiceController } from '../components/ZundamonVoiceController'
 import { FacialExpression } from '../components/FaceDrawing'
 
+// 型定義
+type DisplayMode = 'face' | 'image';
+type ImageScaleMode = 'fit' | 'fill' | 'stretch';
+type VoiceSettings = { volume: number; speed: number; pitch: number; intonation: number };
+type RandomExpressionItem = { expression: string; enabled: boolean };
+type LipSyncData = { volume: number; vowel: string; openness: number; isPlaying: boolean } | null;
+
 export default function HomePage() {
-  const [enableRos2Connection, setEnableRos2Connection] = useState(true); // 常にtrueに変更
+  const [enableRos2Connection, setEnableRos2Connection] = useState(false); // デフォルトでfalseに変更（開発時）
   const [ros2HttpUrl, setRos2HttpUrl] = useState('http://localhost:8080'); // HTTPエンドポイント
   
   // 画像表示モードの状態を追加
@@ -20,10 +28,19 @@ export default function HomePage() {
   const [randomIntervalMin, setRandomIntervalMin] = useState(1);
   const [randomIntervalMax, setRandomIntervalMax] = useState(5);
 
+  // 音声連携の状態を追加
+  const [enableVoiceSync, setEnableVoiceSync] = useState(true); // デフォルトで有効に変更
+  const [lipSyncData, setLipSyncData] = useState<{ volume: number; vowel: string; openness: number; isPlaying: boolean } | null>(null);
+  const [voiceSettings, setVoiceSettings] = useState({ volume: 0.8, speed: 1.0, pitch: 1.0, intonation: 1.0 });
+
+  // UIコントロールの状態を追加
+  const [showSettings, setShowSettings] = useState(false);
+  const [voiceControllerVisible, setVoiceControllerVisible] = useState(false);
+
   // 設定の保存と読み込み
   useEffect(() => {
-    // ROS2接続は常に有効にする - ローカルストレージからの読み込みをスキップ
-    // const savedConnection = localStorage.getItem('enableRos2Connection');
+    // ROS2接続の設定を読み込み（開発時はfalseがデフォルト）
+    const savedConnection = localStorage.getItem('enableRos2Connection');
     const savedUrl = localStorage.getItem('ros2HttpUrl');
     
     // 画像表示モードの設定を読み込み
@@ -38,8 +55,14 @@ export default function HomePage() {
     const savedRandomIntervalMin = localStorage.getItem('randomIntervalMin');
     const savedRandomIntervalMax = localStorage.getItem('randomIntervalMax');
     
-    // ROS2接続は常にtrueに固定
-    setEnableRos2Connection(true);
+    // 音声連携の設定を読み込み
+    const savedEnableVoiceSync = localStorage.getItem('enableVoiceSync');
+    const savedVoiceSettings = localStorage.getItem('voiceSettings');
+    
+    // ROS2接続の設定を適用
+    if (savedConnection) {
+      setEnableRos2Connection(savedConnection === 'true');
+    }
     
     if (savedUrl) {
       setRos2HttpUrl(savedUrl);
@@ -82,11 +105,25 @@ export default function HomePage() {
     if (savedRandomIntervalMax) {
       setRandomIntervalMax(parseFloat(savedRandomIntervalMax));
     }
+    
+    // 音声連携設定の読み込み
+    if (savedEnableVoiceSync) {
+      setEnableVoiceSync(savedEnableVoiceSync === 'true');
+    }
+    
+    if (savedVoiceSettings) {
+      try {
+        const parsedSettings = JSON.parse(savedVoiceSettings);
+        setVoiceSettings(parsedSettings);
+      } catch (error) {
+        console.warn('音声設定の読み込みに失敗しました:', error);
+      }
+    }
   }, []);
 
-  // 設定が変更されたら保存（ROS2接続の状態は常にtrueで保存）
+  // 設定が変更されたら保存
   useEffect(() => {
-    localStorage.setItem('enableRos2Connection', 'true'); // 常にtrueで保存
+    localStorage.setItem('enableRos2Connection', enableRos2Connection.toString());
     localStorage.setItem('ros2HttpUrl', ros2HttpUrl);
     localStorage.setItem('displayMode', displayMode);
     localStorage.setItem('imagePath', imagePath);
@@ -98,7 +135,11 @@ export default function HomePage() {
     localStorage.setItem('randomExpressionList', JSON.stringify(randomExpressionList));
     localStorage.setItem('randomIntervalMin', randomIntervalMin.toString());
     localStorage.setItem('randomIntervalMax', randomIntervalMax.toString());
-  }, [ros2HttpUrl, displayMode, imagePath, imageScaleMode, imageOpacity, enableRandomExpression, randomExpressionList, randomIntervalMin, randomIntervalMax]); // ランダム表情の状態を依存関係に追加
+    
+    // 音声連携設定の保存
+    localStorage.setItem('enableVoiceSync', enableVoiceSync.toString());
+    localStorage.setItem('voiceSettings', JSON.stringify(voiceSettings));
+  }, [ros2HttpUrl, displayMode, imagePath, imageScaleMode, imageOpacity, enableRandomExpression, randomExpressionList, randomIntervalMin, randomIntervalMax, enableVoiceSync, voiceSettings, enableRos2Connection]); // enableRos2Connectionも依存関係に追加
 
   // グローバルキーボードイベントハンドラーを追加（最上位レベルで処理）
   useEffect(() => {
@@ -141,10 +182,55 @@ export default function HomePage() {
     };
   }, [displayMode, imagePath]); // displayModeとimagePathを依存関係に追加
 
+  // キーボードショートカット（V: 音声コントローラー、S: 設定パネル）
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Ctrl、Cmd、Altキーが押されている場合は無視
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      
+      // 入力フィールドにフォーカスがある場合は無視
+      const activeElement = document.activeElement;
+      if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+      
+      if (event.key.toLowerCase() === 'v') {
+        console.log('Vキーが押されました - 音声コントローラーを切り替え');
+        setVoiceControllerVisible(prev => !prev);
+        event.preventDefault();
+      } else if (event.key.toLowerCase() === 's') {
+        console.log('Sキーが押されました - 設定パネルを切り替え');
+        setShowSettings(prev => !prev);
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, []);
+
   // ランダム表情変更のコールバック関数
   const handleRandomExpressionChange = (isActive: boolean) => {
     console.log(`ランダム表情モード変更: ${isActive ? 'ON' : 'OFF'}`);
     setEnableRandomExpression(isActive);
+  };
+
+  // 音声連携のコールバック関数
+  const handleLipSyncData = (data: { volume: number; vowel: string; openness: number; isPlaying: boolean }) => {
+    setLipSyncData(data);
+  };
+
+  const handleVoiceSyncStateChange = (isActive: boolean) => {
+    console.log(`音声連携モード変更: ${isActive ? 'ON' : 'OFF'}`);
+    setEnableVoiceSync(isActive);
+  };
+
+  const handleSpeakingStateChange = (isSpeaking: boolean) => {
+    console.log(`音声再生状態変更: ${isSpeaking ? '再生中' : '停止'}`);
+    // 必要に応じて追加のロジックを実装
   };
 
   // 表情リストの個別トグル関数
@@ -199,17 +285,20 @@ export default function HomePage() {
           
           /* 設定パネル */
           .settings-panel {
-            position: absolute;
-            top: 20px;
+            position: fixed;
+            top: 60px;
             left: 20px;
             padding: 12px;
             background-color: rgba(0, 0, 0, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 8px;
             color: white;
-            z-index: 100;
+            z-index: 999;
             font-family: 'Arial', sans-serif;
             transition: opacity 0.3s ease;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
           }
           
           .settings-panel.hidden {
@@ -254,22 +343,43 @@ export default function HomePage() {
           }
           
           .toggle-settings {
-            position: absolute;
+            position: fixed;
             top: 20px;
             left: 20px;
-            padding: 6px 12px;
-            background-color: rgba(0, 0, 0, 0.5);
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #007acc, #0066cc);
             color: white;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 4px;
+            border: 3px solid rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
             cursor: pointer;
-            z-index: 99;
-            opacity: 0.7;
-            transition: opacity 0.3s ease;
+            z-index: 99999;
+            opacity: 1;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: 700;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 122, 204, 0.4);
+            backdrop-filter: blur(10px);
+            user-select: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            animation: glow 2s ease-in-out infinite alternate;
+          }
+          
+          @keyframes glow {
+            from { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 122, 204, 0.4); }
+            to { box-shadow: 0 8px 25px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 122, 204, 0.6); }
           }
           
           .toggle-settings:hover {
-            opacity: 1;
+            background: linear-gradient(135deg, #0088ff, #0077dd);
+            border-color: rgba(255, 255, 255, 1);
+            transform: scale(1.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 122, 204, 0.8);
+            animation: none;
+          }
+          
+          .toggle-settings:active {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6), 0 0 25px rgba(0, 122, 204, 0.5);
           }
         `}</style>
       </Head>
@@ -286,6 +396,8 @@ export default function HomePage() {
           randomExpressionList={randomExpressionList}
           randomIntervalMin={randomIntervalMin}
           randomIntervalMax={randomIntervalMax}
+          enableVoiceSync={enableVoiceSync}
+          lipSyncData={lipSyncData}
           onDisplayModeToggle={() => {
             console.log('画像モード切り替え:', displayMode === 'face' ? 'image' : 'face');
             const newMode = displayMode === 'face' ? 'image' : 'face';
@@ -303,6 +415,16 @@ export default function HomePage() {
             setImagePath(path);
           }}
           onRandomExpressionChange={handleRandomExpressionChange}
+          onVoiceSyncStateChange={handleVoiceSyncStateChange}
+        />
+        
+        {/* ZundamonVoiceControllerを追加 */}
+        <ZundamonVoiceController
+          onLipSyncData={handleLipSyncData}
+          onSpeakingStateChange={handleSpeakingStateChange}
+          voiceSettings={voiceSettings}
+          externalVisible={voiceControllerVisible}
+          onVisibilityChange={setVoiceControllerVisible}
         />
         
         <SettingsPanel 
@@ -327,6 +449,13 @@ export default function HomePage() {
           randomIntervalMax={randomIntervalMax}
           setRandomIntervalMax={setRandomIntervalMax}
           toggleExpressionInList={toggleExpressionInList}
+          enableVoiceSync={enableVoiceSync}
+          setEnableVoiceSync={setEnableVoiceSync}
+          voiceSettings={voiceSettings}
+          setVoiceSettings={setVoiceSettings}
+          setLipSyncData={setLipSyncData}
+          showSettings={showSettings}
+          setShowSettings={setShowSettings}
         />
       </div>
     </React.Fragment>
@@ -355,9 +484,44 @@ function SettingsPanel({
   setRandomIntervalMin,
   randomIntervalMax,
   setRandomIntervalMax,
-  toggleExpressionInList
+  toggleExpressionInList,
+  enableVoiceSync,
+  setEnableVoiceSync,
+  voiceSettings,
+  setVoiceSettings,
+  setLipSyncData,
+  showSettings,
+  setShowSettings
+}: {
+  enableRos2Connection: boolean;
+  setEnableRos2Connection: (value: boolean) => void;
+  ros2HttpUrl: string;
+  setRos2HttpUrl: (value: string) => void;
+  displayMode: DisplayMode;
+  setDisplayMode: (value: DisplayMode) => void;
+  imagePath: string;
+  setImagePath: (value: string) => void;
+  imageScaleMode: ImageScaleMode;
+  setImageScaleMode: (value: ImageScaleMode) => void;
+  imageOpacity: number;
+  setImageOpacity: (value: number) => void;
+  enableRandomExpression: boolean;
+  setEnableRandomExpression: (value: boolean) => void;
+  randomExpressionList: FacialExpression[];
+  setRandomExpressionList: (value: FacialExpression[]) => void;
+  randomIntervalMin: number;
+  setRandomIntervalMin: (value: number) => void;
+  randomIntervalMax: number;
+  setRandomIntervalMax: (value: number) => void;
+  toggleExpressionInList: (expression: string) => void;
+  enableVoiceSync: boolean;
+  setEnableVoiceSync: (value: boolean) => void;
+  voiceSettings: VoiceSettings;
+  setVoiceSettings: (value: VoiceSettings) => void;
+  setLipSyncData: (data: LipSyncData) => void;
+  showSettings: boolean;
+  setShowSettings: (value: boolean) => void;
 }) {
-  const [showSettings, setShowSettings] = useState(false);
   const [tempRos2HttpUrl, setTempRos2HttpUrl] = useState(ros2HttpUrl);
   const [tempImagePath, setTempImagePath] = useState(imagePath);
   const [tempImageScaleMode, setTempImageScaleMode] = useState(imageScaleMode);
@@ -495,12 +659,25 @@ function SettingsPanel({
         <button 
           className="toggle-settings" 
           onClick={() => setShowSettings(true)}
+          title="設定パネルを開く"
         >
-          設定表示
+          ⚙️ 設定 (S)
         </button>
       )}
       
       <div className={`settings-panel ${showSettings ? '' : 'hidden'}`}>
+        <div style={{ 
+          background: 'rgba(0, 122, 204, 0.1)', 
+          border: '1px solid rgba(0, 122, 204, 0.3)', 
+          borderRadius: '6px', 
+          padding: '8px 12px', 
+          marginBottom: '15px',
+          fontSize: '14px',
+          color: '#007acc'
+        }}>
+          💡 <strong>キーボードショートカット:</strong> S = 設定パネル開閉, V = 音声コントローラー開閉
+        </div>
+        
         <h3>ROS2接続設定</h3>
         
         <label>
@@ -508,9 +685,8 @@ function SettingsPanel({
             type="checkbox" 
             checked={enableRos2Connection}
             onChange={(e) => setEnableRos2Connection(e.target.checked)} 
-            disabled={true} // 常に無効化してユーザーが変更できないようにする
           />
-          ROS2接続を有効化 (常に有効)
+          ROS2接続を有効化
         </label>
         
         <label>
@@ -662,6 +838,110 @@ function SettingsPanel({
                 </div>
               </>
             )}
+          </>
+        )}
+        
+        {/* 音声連携設定 */}
+        <h3>音声連携設定</h3>
+        
+        <label>
+          <input 
+            type="checkbox"
+            checked={enableVoiceSync}
+            onChange={(e) => setEnableVoiceSync(e.target.checked)}
+          />
+          音声連携を有効化
+        </label>
+        
+        <div style={{ marginBottom: '10px', fontSize: '12px', color: '#999' }}>
+          音声連携を有効にすると、右上に🎤ボタンが表示されます。
+          <br />
+          ボタンをクリックまたは「Vキー」で音声コントローラーを開き、「挨拶」や「ランダムセリフ」を試してください。
+          <br />
+          音声再生中は日本語の母音（あいうえお）に応じて口の形が自動的に変化します。
+        </div>
+        
+        {enableVoiceSync && (
+          <>
+            <label>
+              音量:
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.1"
+                value={voiceSettings.volume}
+                onChange={(e) => setVoiceSettings({...voiceSettings, volume: parseFloat(e.target.value)})}
+              />
+              {voiceSettings.volume}
+            </label>
+            
+            <label>
+              速度:
+              <input 
+                type="range" 
+                min="0.5" 
+                max="2" 
+                step="0.1"
+                value={voiceSettings.speed}
+                onChange={(e) => setVoiceSettings({...voiceSettings, speed: parseFloat(e.target.value)})}
+              />
+              {voiceSettings.speed}
+            </label>
+            
+            <label>
+              ピッチ:
+              <input 
+                type="range" 
+                min="0.5" 
+                max="2" 
+                step="0.1"
+                value={voiceSettings.pitch}
+                onChange={(e) => setVoiceSettings({...voiceSettings, pitch: parseFloat(e.target.value)})}
+              />
+              {voiceSettings.pitch}
+            </label>
+            
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
+              ※ 音声連携モードでは、他の自動動作（ランダム表情変更等）は無効になります
+            </div>
+            
+            <div style={{ marginTop: '10px' }}>
+              <button 
+                onClick={() => {
+                  // より自然なリップシンクテストパターンを実行
+                  const testSequence = [
+                    { volume: 0.7, vowel: 'a', openness: 0.8, isPlaying: true },
+                    { volume: 0.5, vowel: 'i', openness: 0.3, isPlaying: true },
+                    { volume: 0.6, vowel: 'u', openness: 0.4, isPlaying: true },
+                    { volume: 0.8, vowel: 'e', openness: 0.5, isPlaying: true },
+                    { volume: 0.7, vowel: 'o', openness: 0.7, isPlaying: true },
+                    { volume: 0, vowel: 'silent', openness: 0, isPlaying: false }
+                  ];
+                  
+                  let index = 0;
+                  const testInterval = setInterval(() => {
+                    if (index < testSequence.length) {
+                      setLipSyncData(testSequence[index]);
+                      index++;
+                    } else {
+                      clearInterval(testInterval);
+                    }
+                  }, 500); // 各パターンを500msずつ表示
+                }}
+                style={{
+                  fontSize: '12px',
+                  padding: '4px 8px',
+                  background: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer'
+                }}
+              >
+                リップシンクテスト (あいうえお)
+              </button>
+            </div>
           </>
         )}
         
