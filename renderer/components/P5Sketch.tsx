@@ -101,6 +101,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const [showHitBoxes, setShowHitBoxes] = useState(true); // デバッグ用：最初は表示
   const showHitBoxesRef = useRef(true); // refでも管理して即座にアクセス
   
+  // 撫で時間表示の可視化用状態
+  const [showStrokingTime, setShowStrokingTime] = useState(true); // デフォルトで表示
+  const showStrokingTimeRef = useRef(true); // refでも管理して即座にアクセス
+  
   // 瞳の手動制御用状態
   const manualPupilTargetRef = useRef<{ x: number, y: number } | null>(null);
   const manualPupilTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,6 +115,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const dragStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
   const dragCurrentRef = useRef<{ x: number, y: number } | null>(null);
   const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 撫で時間表示用状態
+  const [strokingTime, setStrokingTime] = useState<number>(0);
+  const strokingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const strokingExpressionTimerSet = useRef(false); // 撫で表情タイマーが設定済みかの追跡
 
   // マウス位置記録のための状態
   const [savedMousePosition, setSavedMousePosition] = useState<{ x: number, y: number } | null>(null);
@@ -135,6 +144,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     showHitBoxesRef.current = showHitBoxes;
     console.log('🔄 showHitBoxes state changed:', showHitBoxes);
   }, [showHitBoxes]);
+
+  // showStrokingTimeの変更を監視してrefも同期
+  useEffect(() => {
+    showStrokingTimeRef.current = showStrokingTime;
+    console.log('🔄 showStrokingTime state changed:', showStrokingTime);
+  }, [showStrokingTime]);
 
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
@@ -520,6 +535,20 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }
   }, [expression]);
   
+  // クリーンアップ処理
+  useEffect(() => {
+    return () => {
+      // 撫で時間タイマーのクリーンアップ
+      if (strokingTimerRef.current) {
+        clearInterval(strokingTimerRef.current);
+      }
+      // ドラッグタイムアウトのクリーンアップ
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+      }
+    };
+  }, []);
+  
   // p5のsetup関数 - キャンバスの作成をシンプルに
   const setup = (p5, canvasParentRef) => {
     // シンプルにキャンバスを作成するだけ
@@ -656,6 +685,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     dragCurrentRef.current = { x, y };
     setIsDragging(false);
     isDraggingRef.current = false; // refも同期
+    strokingExpressionTimerSet.current = false; // 撫でタイマーフラグをリセット
     
     console.log('ドラッグ開始候補:', { x, y });
   };
@@ -684,6 +714,59 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       setIsDragging(true);
       isDraggingRef.current = true; // refも即座に更新
       console.log('ドラッグ開始検出:', { distance, start: dragStartRef.current, current: { x, y } });
+      
+      // ドラッグ開始時に撫で動作の条件をチェック
+      const duration = Date.now() - dragStartRef.current.time;
+      const isOutsideEyes = checkIfDragOutsideEyes(dragStartRef.current, { x, y });
+      
+      console.log('撫で動作チェック:', { distance, duration, isOutsideEyes });
+      
+      if (isOutsideEyes && distance > 20 && !strokingExpressionTimerSet.current) {
+        console.log('✅ 撫で動作条件満たしました！（初回のみ）');
+        strokingExpressionTimerSet.current = true; // タイマー設定済みをマーク
+        
+        // 撫で時間の計測を開始
+        setStrokingTime(0);
+        if (strokingTimerRef.current) {
+          clearInterval(strokingTimerRef.current);
+        }
+        strokingTimerRef.current = setInterval(() => {
+          if (isDraggingRef.current) {
+            setStrokingTime(prev => prev + 0.1);
+          }
+        }, 100); // 0.1秒ごとに更新
+        
+        // 2-5秒後に表情変更するタイマーを設定
+        const randomDelay = 2000 + Math.random() * 1500; // 2000ms + 0-1500ms = 2-3.5秒
+        console.log(`🕒 撫で動作開始 - ${Math.round(randomDelay)}ms後に表情変更予定`);
+        
+        // 既存のタイムアウトをクリア
+        if (dragTimeoutRef.current) {
+          clearTimeout(dragTimeoutRef.current);
+          console.log('⚠️ 既存のタイマーをクリアしました');
+        }
+        
+        console.log('⏰ 新しいタイマーを設定します...');
+        
+        // 2-5秒後に表情変更
+        dragTimeoutRef.current = setTimeout(() => {
+          console.log('=== 撫でタイマー発火 ===');
+          console.log('isDraggingRef.current:', isDraggingRef.current);
+          console.log('manualExpressionRef.current.isManual:', manualExpressionRef.current.isManual);
+          console.log('現在の表情:', expression);
+          
+          // まだドラッグ中の場合のみ変更（手動表情フラグは無視）
+          if (isDraggingRef.current) {
+            const expressions: FacialExpression[] = ['happy', 'wink'];
+            const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+            
+            console.log('🎉 撫で継続中 - 表情変更:', randomExpression);
+            setManualExpression(randomExpression);
+          } else {
+            console.log('ドラッグが終了しているため表情変更をスキップ');
+          }
+        }, randomDelay);
+      }
     }
   };
 
@@ -713,35 +796,25 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       
       console.log('ドラッグ終了:', { distance, duration, isDragging: isDraggingRef.current });
       
-      // ドラッグが目以外の場所で行われたかチェック
+      // 撫で動作だった場合、ドラッグ終了から2秒後に元の表情に戻す
       const isOutsideEyes = checkIfDragOutsideEyes(dragStartRef.current, dragCurrentRef.current);
-      console.log('目以外でのドラッグ:', isOutsideEyes);
-      console.log('距離条件:', distance > 20);
-      console.log('時間条件:', duration > 100);
       
-      if (isOutsideEyes && distance > 20 && duration > 100) { // 条件を緩和
-        // 笑顔かウインクをランダムに選択
-        const expressions: FacialExpression[] = ['happy', 'wink'];
-        const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+      if (isOutsideEyes && distance > 20) {
+        console.log('撫で動作終了 - 2秒後にneutralに戻します');
         
-        console.log('🎉 撫で動作検出 - 表情変更:', randomExpression);
-        setManualExpression(randomExpression);
-        
-        // 3秒後に元の表情に戻す
+        // 既存のタイムアウトをクリア
         if (dragTimeoutRef.current) {
           clearTimeout(dragTimeoutRef.current);
         }
+        
+        // 2秒後に元の表情に戻す
         dragTimeoutRef.current = setTimeout(() => {
           console.log('撫で効果終了 - neutralに戻す');
           setManualExpression('neutral');
-        }, 3000);
-      } else {
-        console.log('撫で動作の条件未満:', { isOutsideEyes, distance, duration });
+        }, 2000);
       }
     } else {
       // 短いタップの場合は既存のタップ処理を実行
-      // ただし、重複を避けるためにここでは直接タップ処理を呼ばない
-      // 代わりにclickイベントが自然に発生する
       console.log('短いタップとして処理');
     }
     
@@ -751,6 +824,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     dragCurrentRef.current = null;
     setIsDragging(false);
     isDraggingRef.current = false;
+    strokingExpressionTimerSet.current = false; // 撫でタイマーフラグもリセット
+    
+    // 撫で時間タイマーを停止
+    if (strokingTimerRef.current) {
+      clearInterval(strokingTimerRef.current);
+      strokingTimerRef.current = null;
+    }
+    // 撫で時間表示をリセット（少し遅延させて結果を見せる）
+    setTimeout(() => {
+      setStrokingTime(0);
+    }, 1000);
+    
     console.log('=== ドラッグ終了処理完了 ===');
   };
 
@@ -966,6 +1051,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // 通知を画面中央に表示
     drawNotification(p5);
+    
+    // 撫で時間を左上に表示
+    drawStrokingTime(p5);
   };
 
   // 通知を画面中央に表示する関数
@@ -1006,6 +1094,40 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     lines.forEach((line, index) => {
       p5.text(line, boxX + boxWidth / 2, startY + index * lineHeight);
     });
+    
+    p5.pop();
+  };
+
+  // 撫で時間を左上に表示する関数
+  const drawStrokingTime = (p5) => {
+    if (!isDragging || strokingTime <= 0 || !showStrokingTime) return;
+    
+    p5.push();
+    
+    // 背景設定
+    const boxWidth = 200;
+    const boxHeight = 60;
+    const margin = 20;
+    
+    // 半透明の背景
+    p5.fill(0, 0, 0, 120);
+    p5.rect(margin, margin, boxWidth, boxHeight, 8);
+    
+    // 枠線
+    p5.stroke(255, 255, 0); // 黄色の枠線
+    p5.strokeWeight(2);
+    p5.noFill();
+    p5.rect(margin, margin, boxWidth, boxHeight, 8);
+    
+    // テキスト設定
+    p5.fill(255, 255, 0); // 黄色のテキスト
+    p5.noStroke();
+    p5.textAlign(p5.CENTER, p5.CENTER);
+    p5.textSize(16);
+    
+    // 撫で時間を秒単位で表示
+    const timeText = `撫で時間: ${strokingTime.toFixed(1)}秒`;
+    p5.text(timeText, margin + boxWidth / 2, margin + boxHeight / 2);
     
     p5.pop();
   };
@@ -2414,11 +2536,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         onDisplayModeToggle();
       }
     } else if (p5.key === 'h' || p5.key === 'H') {
-      // Hキーで当たり判定の表示切り替え
+      // Hキーで当たり判定と撫で時間表示の切り替え
       const newShowHitBoxes = !showHitBoxesRef.current; // refの現在値を使用
+      const newShowStrokingTime = !showStrokingTimeRef.current;
+      
       setShowHitBoxes(newShowHitBoxes);
       showHitBoxesRef.current = newShowHitBoxes; // refも即座に更新
+      
+      setShowStrokingTime(newShowStrokingTime);
+      showStrokingTimeRef.current = newShowStrokingTime; // refも即座に更新
+      
       console.log('Hキー: 当たり判定表示切り替え ->', newShowHitBoxes);
+      console.log('Hキー: 撫で時間表示切り替え ->', newShowStrokingTime);
     } else if (p5.key === 'p' || p5.key === 'P') {
       // Pキーでピクチャーインピクチャーモードの切り替え
       togglePictureInPicture();
