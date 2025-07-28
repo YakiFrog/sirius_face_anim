@@ -410,6 +410,48 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
   }, []);
 
+  // 全画面モードでの複数指操作を無効化
+  useEffect(() => {
+    if (!fullScreen) return;
+
+    const preventMultiTouch = (event: TouchEvent) => {
+      // 複数指操作を検出して無効化
+      if (event.touches.length > 1) {
+        event.preventDefault();
+        event.stopPropagation();
+        console.log('🚫 Multi-touch gesture blocked in fullscreen mode');
+        return false;
+      }
+    };
+
+    const preventGestures = (event: Event) => {
+      // ピンチやその他のジェスチャーを無効化
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    };
+
+    // タッチイベントリスナーを追加
+    document.addEventListener('touchstart', preventMultiTouch, { passive: false });
+    document.addEventListener('touchmove', preventMultiTouch, { passive: false });
+    document.addEventListener('touchend', preventMultiTouch, { passive: false });
+    
+    // ジェスチャーイベントを無効化（iOS Safari用）
+    document.addEventListener('gesturestart', preventGestures, { passive: false });
+    document.addEventListener('gesturechange', preventGestures, { passive: false });
+    document.addEventListener('gestureend', preventGestures, { passive: false });
+
+    // クリーンアップ
+    return () => {
+      document.removeEventListener('touchstart', preventMultiTouch);
+      document.removeEventListener('touchmove', preventMultiTouch);
+      document.removeEventListener('touchend', preventMultiTouch);
+      document.removeEventListener('gesturestart', preventGestures);
+      document.removeEventListener('gesturechange', preventGestures);
+      document.removeEventListener('gestureend', preventGestures);
+    };
+  }, [fullScreen]);
+
   // 瞬きの処理を設定
   useEffect(() => {
     const blinkDuration = 130; // 瞬きの持続時間（ミリ秒）
@@ -2068,7 +2110,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     left: 0,
     cursor: cursorVisible ? 'auto' : 'none',
     backgroundColor: '#000',
-  };
+    // 全画面モードの時は複数指操作を無効化
+    touchAction: fullScreen ? 'none' : 'auto',
+    // ユーザー選択を無効化（追加のセキュリティ）
+    userSelect: fullScreen ? 'none' : 'auto',
+    // テキスト選択を無効化
+    WebkitUserSelect: fullScreen ? 'none' : 'auto',
+    // ドラッグを無効化
+    WebkitTouchCallout: fullScreen ? 'none' : 'auto',
+  } as React.CSSProperties;
 
   return (
     <div ref={containerRef} style={sketchStyle}>
