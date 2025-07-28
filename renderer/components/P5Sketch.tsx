@@ -102,6 +102,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // refを使って即座にアクセスできるようにする
   const savedMousePositionRef = useRef<{ x: number, y: number } | null>(null);
   
+  // 通知表示のstate
+  const [notification, setNotification] = useState<string | null>(null);
+  const notificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // デバウンス用のref
   const mouseActionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActionTimeRef = useRef<number>(0);
@@ -573,6 +577,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // マウス位置記録状態を画面左上に表示
     drawMousePositionStatus(p5);
+    
+    // 通知を画面中央に表示
+    drawNotification(p5);
   };
 
   // マウス位置記録状態を表示する関数
@@ -597,6 +604,48 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.textSize(12);
     p5.text(`State: ${JSON.stringify(savedMousePosition)}`, 10, 60);
     p5.text(`Ref: ${JSON.stringify(savedMousePositionRef.current)}`, 10, 80);
+  };
+
+  // 通知を画面中央に表示する関数
+  const drawNotification = (p5) => {
+    if (!notification) return;
+    
+    // 背景の設定
+    p5.push();
+    
+    // 通知ボックスのスタイル設定
+    const boxWidth = 400;
+    const boxHeight = 100;
+    const boxX = (p5.width - boxWidth) / 2;
+    const boxY = (p5.height - boxHeight) / 2;
+    
+    // 半透明の背景
+    p5.fill(0, 0, 0, 150);
+    p5.rect(boxX, boxY, boxWidth, boxHeight, 10);
+    
+    // 枠線
+    p5.stroke(255);
+    p5.strokeWeight(2);
+    p5.noFill();
+    p5.rect(boxX, boxY, boxWidth, boxHeight, 10);
+    
+    // テキストの設定
+    p5.fill(255);
+    p5.noStroke();
+    p5.textAlign(p5.CENTER, p5.CENTER);
+    p5.textSize(18);
+    
+    // 複数行テキストに対応
+    const lines = notification.split('\n');
+    const lineHeight = 25;
+    const totalTextHeight = lines.length * lineHeight;
+    const startY = boxY + (boxHeight - totalTextHeight) / 2 + lineHeight / 2;
+    
+    lines.forEach((line, index) => {
+      p5.text(line, boxX + boxWidth / 2, startY + index * lineHeight);
+    });
+    
+    p5.pop();
   };
 
   // 画像表示モードの描画処理
@@ -1821,6 +1870,22 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }
   };
 
+  // 通知を表示する関数
+  const showNotification = (message: string, duration: number = 2000) => {
+    // 既存のタイマーをクリア
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    
+    // 通知を表示
+    setNotification(message);
+    
+    // 指定時間後に通知を消す
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification(null);
+    }, duration);
+  };
+
   // マウス位置を記録する関数（デバウンス付き）
   const saveMousePosition = async () => {
     const now = Date.now();
@@ -1844,6 +1909,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           setSavedMousePosition(result.position);
           savedMousePositionRef.current = result.position; // refも同時に更新
           console.log('マウス位置を記録しました:', result.position);
+          
+          // 通知を表示
+          showNotification(`マウス位置を記録しました\n(${result.position.x}, ${result.position.y})`, 2000);
         } else {
           console.error('マウス位置の取得に失敗しました:', result.error);
         }
@@ -1880,17 +1948,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     try {
       if (typeof window !== 'undefined' && window.ipc) {
-        console.log('IPC通信でマウス移動を要求中...');
-        const result = await window.ipc.moveCursor(positionToUse.x, positionToUse.y);
+        console.log('IPC通信でマウス移動+クリックを要求中...');
+        const result = await window.ipc.moveCursorAndClick(positionToUse.x, positionToUse.y);
         console.log('IPC通信の結果:', result);
         
         if (result.success) {
-          console.log('✅ マウスを記録位置に移動しました:', positionToUse);
+          console.log('✅ マウスを記録位置に移動してクリックしました:', positionToUse);
           if (result.newPosition) {
             console.log('移動後の位置:', result.newPosition);
           }
         } else {
-          console.error('❌ マウス移動に失敗しました:', result.error);
+          console.error('❌ マウス移動+クリックに失敗しました:', result.error);
         }
       } else {
         console.error('❌ IPCが利用できません');

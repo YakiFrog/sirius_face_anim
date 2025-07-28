@@ -15,6 +15,7 @@ const handler = {
   },
   // マウス操作API
   moveCursor: (x: number, y: number) => ipcRenderer.invoke('move-cursor', x, y),
+  moveCursorAndClick: (x: number, y: number) => ipcRenderer.invoke('move-cursor-and-click', x, y),
   getCursorPosition: () => ipcRenderer.invoke('get-cursor-position'),
 }
 

@@ -76,6 +76,35 @@ ipcMain.handle('move-cursor', async (event, x: number, y: number) => {
   }
 })
 
+// マウスポインタを指定座標に移動してクリックするIPCハンドラー
+ipcMain.handle('move-cursor-and-click', async (event, x: number, y: number) => {
+  try {
+    console.log(`🎯 Moving cursor to: (${x}, ${y}) and clicking`)
+    
+    // robotjsの設定を調整
+    robot.setMouseDelay(2)
+    
+    // マウスを移動
+    robot.moveMouse(x, y)
+    
+    // 移動完了を待つ
+    await new Promise(resolve => setTimeout(resolve, 50))
+    
+    // 位置を確認
+    const newPos = robot.getMousePos()
+    console.log(`✅ Cursor moved to: (${newPos.x}, ${newPos.y})`)
+    
+    // クリックを実行
+    robot.mouseClick()
+    console.log(`🖱️ Mouse clicked at: (${newPos.x}, ${newPos.y})`)
+    
+    return { success: true, newPosition: newPos }
+  } catch (error) {
+    console.error('❌ Failed to move cursor and click:', error)
+    return { success: false, error: error.message }
+  }
+})
+
 // 現在のマウスポインタ位置を取得するIPCハンドラー
 ipcMain.handle('get-cursor-position', async (event) => {
   try {
