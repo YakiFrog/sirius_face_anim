@@ -96,6 +96,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const tapPositionRef = useRef({ x: 0, y: 0 });
   // タップ前の表情を記録するためのref
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
+  
+  // 当たり判定の可視化用状態
+  const [showHitBoxes, setShowHitBoxes] = useState(true); // デバッグ用：最初は表示
+  const showHitBoxesRef = useRef(true); // refでも管理して即座にアクセス
+  
+  // 瞳の手動制御用状態
+  const manualPupilTargetRef = useRef<{ x: number, y: number } | null>(null);
+  const manualPupilTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // マウス位置記録のための状態
   const [savedMousePosition, setSavedMousePosition] = useState<{ x: number, y: number } | null>(null);
@@ -114,6 +122,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   useEffect(() => {
     console.log('🔄 savedMousePosition state changed:', savedMousePosition);
   }, [savedMousePosition]);
+
+  // showHitBoxesの変更を監視してrefも同期
+  useEffect(() => {
+    showHitBoxesRef.current = showHitBoxes;
+    console.log('🔄 showHitBoxes state changed:', showHitBoxes);
+  }, [showHitBoxes]);
 
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
@@ -561,6 +575,59 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
   };
 
+  // 正確な目の位置を計算する関数
+  const calculateEyePositions = (params) => {
+    // 表情に応じた目のY位置オフセットを計算
+    let eyeYOffset = 0;
+    
+    switch (expression) {
+      case 'neutral':
+        eyeYOffset = 0;
+        break;
+      case 'happy':
+        eyeYOffset = -params.eyeSize * 0.05;
+        break;
+      case 'angry':
+        eyeYOffset = params.eyeSize * 0.1;
+        break;
+      case 'sad':
+        eyeYOffset = params.eyeSize * 0.15;
+        break;
+      case 'surprised':
+        eyeYOffset = -params.eyeSize * 0.1;
+        break;
+      case 'crying':
+        eyeYOffset = params.eyeSize * 0.1;
+        break;
+      case 'hurt':
+        eyeYOffset = params.eyeSize * 0.10;
+        break;
+      case 'wink':
+        eyeYOffset = 0;
+        break;
+      case 'mouth3':
+        eyeYOffset = 0;
+        break;
+    }
+    
+    // 頭の動きを考慮した実際の目の位置
+    const headMovement = headMovementRef.current;
+    
+    // 左目の中心位置
+    const leftEyeCenterX = dimensions.width / 2 - params.eyeSpacing + headMovement.x;
+    const leftEyeCenterY = dimensions.height / 2 - params.eyeYOffset + eyeYOffset + headMovement.y;
+    
+    // 右目の中心位置
+    const rightEyeCenterX = dimensions.width / 2 + params.eyeSpacing + headMovement.x;
+    const rightEyeCenterY = dimensions.height / 2 - params.eyeYOffset + eyeYOffset + headMovement.y;
+    
+    return {
+      left: { x: leftEyeCenterX, y: leftEyeCenterY },
+      right: { x: rightEyeCenterX, y: rightEyeCenterY },
+      eyeYOffset
+    };
+  };
+
   // タップ（クリック）イベントのハンドラ
   const handleTap = (event) => {
     // タップ位置を記録（タッチイベントとクリックイベントの両方に対応）
@@ -574,34 +641,127 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     tapPositionRef.current = { x, y };
     
-    // より詳細なデバッグ情報を出力
+    // p5のdraw関数で設定された実際の目の位置を取得
+    // refを使って現在のp5インスタンスから位置情報を取得
+    let eyePositions = null;
+    let eyeHitRadius = 50; // デフォルト値
+    
+    // 基本的な計算で位置を推定（フォールバック）
+    const scale = scaleFactorRef.current;
+    const baseEyeSize = baseWidth / 4.5;
+    const baseEyeSpacing = baseEyeSize * 1;
+    const baseEyeYOffset = baseHeight / 8;
+    
+    const eyeSize = baseEyeSize * scale * 1.2;
+    const eyeSpacing = baseEyeSpacing * scale * currentEyeSpacingFactor;
+    const eyeYOffset = baseEyeYOffset * scale;
+    
+    const headMovement = headMovementRef.current;
+    
+    eyePositions = {
+      left: { 
+        x: dimensions.width / 2 - eyeSpacing + headMovement.x, 
+        y: dimensions.height / 2 - eyeYOffset + headMovement.y 
+      },
+      right: { 
+        x: dimensions.width / 2 + eyeSpacing + headMovement.x, 
+        y: dimensions.height / 2 - eyeYOffset + headMovement.y 
+      }
+    };
+    eyeHitRadius = eyeSize * 0.5;
+    
+    // タップが目の範囲内かどうかをチェック
+    const distanceToLeftEye = Math.sqrt(
+      Math.pow(x - eyePositions.left.x, 2) + Math.pow(y - eyePositions.left.y, 2)
+    );
+    const distanceToRightEye = Math.sqrt(
+      Math.pow(x - eyePositions.right.x, 2) + Math.pow(y - eyePositions.right.y, 2)
+    );
+    
+    const isEyeTouch = distanceToLeftEye <= eyeHitRadius || distanceToRightEye <= eyeHitRadius;
+    
     console.log('=== タップイベント詳細 ===');
-    console.log('React state expression:', expression);
-    console.log('prevExpressionRef.current:', prevExpressionRef.current);
-    console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
-    
-    // hurt表情でない場合のみ、現在の表情を記録
-    if (prevExpressionRef.current !== 'hurt') {
-      preHurtExpressionRef.current = prevExpressionRef.current;
-    }
-    // hurt表情の場合は既存の記録をそのまま保持
-    
-    console.log('記録した表情:', preHurtExpressionRef.current);
+    console.log('タップ位置:', { x, y });
+    console.log('左目中心:', eyePositions.left);
+    console.log('右目中心:', eyePositions.right);
+    console.log('左目距離:', distanceToLeftEye);
+    console.log('右目距離:', distanceToRightEye);
+    console.log('当たり判定半径:', eyeHitRadius);
+    console.log('目への接触:', isEyeTouch);
     console.log('========================');
     
-    // 痛がる表情に変更（手動表情変更として）
-    setManualExpression('hurt');
-    
-    // 1秒後に元の表情に戻す
-    if (tapTimeoutRef.current) {
-      clearTimeout(tapTimeoutRef.current);
+    if (isEyeTouch) {
+      // 目の範囲内をタップした場合：表情を変える
+      console.log('目をタップ - 表情変更');
+      
+      // より詳細なデバッグ情報を出力
+      console.log('React state expression:', expression);
+      console.log('prevExpressionRef.current:', prevExpressionRef.current);
+      console.log('preHurtExpressionRef.current (タップ前):', preHurtExpressionRef.current);
+      
+      // hurt表情でない場合のみ、現在の表情を記録
+      if (prevExpressionRef.current !== 'hurt') {
+        preHurtExpressionRef.current = prevExpressionRef.current;
+      }
+      // hurt表情の場合は既存の記録をそのまま保持
+      
+      console.log('記録した表情:', preHurtExpressionRef.current);
+      
+      // 痛がる表情に変更（手動表情変更として）
+      setManualExpression('hurt');
+      
+      // 1秒後に元の表情に戻す
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+      }
+      tapTimeoutRef.current = setTimeout(() => {
+        const restoreExpression = preHurtExpressionRef.current;
+        console.log('戻す表情:', restoreExpression);
+        // 元の表情に戻すときも手動表情変更として扱う
+        setManualExpression(restoreExpression);
+      }, 1000);
+    } else {
+      // 目以外の場所をタップした場合：瞳孔をその方向に動かす
+      console.log('目以外をタップ - 瞳孔移動');
+      
+      // 画面中央を基準とした相対位置を計算
+      const centerX = dimensions.width / 2;
+      const centerY = dimensions.height / 2;
+      
+      // タップ位置への方向ベクトルを計算
+      const deltaX = x - centerX;
+      const deltaY = y - centerY;
+      
+      // 正規化して瞳の可動範囲内に収める
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const maxRadius = eyeSize / 10; // 瞳が動ける最大範囲（eyeSizeは上で定義済み）
+      
+      let targetX, targetY;
+      if (distance > 0) {
+        const scale = Math.min(distance, maxRadius * 3) / distance;
+        targetX = deltaX * scale * 0.15; // スケールを調整
+        targetY = deltaY * scale * 0.15;
+      } else {
+        targetX = 0;
+        targetY = 0;
+      }
+      
+      // 手動瞳孔制御の設定
+      manualPupilTargetRef.current = { x: targetX, y: targetY };
+      
+      // 既存のタイムアウトをクリア
+      if (manualPupilTimeoutRef.current) {
+        clearTimeout(manualPupilTimeoutRef.current);
+      }
+      
+      // 3秒後に手動制御を解除
+      manualPupilTimeoutRef.current = setTimeout(() => {
+        manualPupilTargetRef.current = null;
+        console.log('瞳孔の手動制御を解除');
+      }, 3000);
+      
+      console.log('瞳孔ターゲット設定:', { targetX, targetY });
     }
-    tapTimeoutRef.current = setTimeout(() => {
-      const restoreExpression = preHurtExpressionRef.current;
-      console.log('戻す表情:', restoreExpression);
-      // 元の表情に戻すときも手動表情変更として扱う
-      setManualExpression(restoreExpression);
-    }, 1000);
   };
 
   // p5のdraw関数 - 表示モードに応じて顔または画像を描画
@@ -791,6 +951,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
     // 口を描画
     drawMouth(p5, eyeParams);
+    
+    // 当たり判定を可視化（デバッグ用）
+    if (showHitBoxesRef.current) {
+      drawHitBoxes(p5, eyeParams);
+    }
     
     // 頭の動きをリセット（重要：pushを使用したら、必ずpopでリセットする）
     p5.pop();
@@ -985,22 +1150,29 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 次の瞳の動きまでのフレーム数を管理
     p5.nextEyeMovement = p5.nextEyeMovement || 0;
     
-    // 初回実行時または設定された次回のタイミングになったら瞳の位置を更新
-    if (!p5.frameCount || p5.frameCount >= p5.nextEyeMovement) {
-      // 新しい位置へ移動
-      p5.leftEyeTarget = {
-        x: (Math.random() * 2 - 1) * params.eyeRadius,
-        y: (Math.random() * 2 - 1) * params.eyeRadius
-      };
-      p5.rightEyeTarget = {
-        x: p5.leftEyeTarget.x,
-        y: p5.leftEyeTarget.y
-      };
-      
-      // 次に瞳を動かすタイミングを設定
-      const minFrames = 60 * 3; // 3秒
-      const maxFrames = 600; // 10秒
-      p5.nextEyeMovement = p5.frameCount + Math.floor(Math.random() * (maxFrames - minFrames + 1)) + minFrames;
+    // 手動制御が有効な場合は手動ターゲットを使用
+    if (manualPupilTargetRef.current) {
+      p5.leftEyeTarget = { ...manualPupilTargetRef.current };
+      p5.rightEyeTarget = { ...manualPupilTargetRef.current };
+    } else {
+      // 通常の自動瞳移動
+      // 初回実行時または設定された次回のタイミングになったら瞳の位置を更新
+      if (!p5.frameCount || p5.frameCount >= p5.nextEyeMovement) {
+        // 新しい位置へ移動
+        p5.leftEyeTarget = {
+          x: (Math.random() * 2 - 1) * params.eyeRadius,
+          y: (Math.random() * 2 - 1) * params.eyeRadius
+        };
+        p5.rightEyeTarget = {
+          x: p5.leftEyeTarget.x,
+          y: p5.leftEyeTarget.y
+        };
+        
+        // 次に瞳を動かすタイミングを設定
+        const minFrames = 60 * 3; // 3秒
+        const maxFrames = 600; // 10秒
+        p5.nextEyeMovement = p5.frameCount + Math.floor(Math.random() * (maxFrames - minFrames + 1)) + minFrames;
+      }
     }
     
     // 現在の瞳の位置を保存
@@ -1049,7 +1221,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         eyeAngle = -0.07; // 少し上向きの目
         // eyeHeightFactor = 1.15; // 少し細める
         // eyeWidthFactor = 1.05; // 少し広げる
-        // eyeYOffset = -params.eyeSize * 0.05; // 少し上にシフト
+        eyeYOffset = -params.eyeSize * 0.05; // 少し上にシフト
         // upperEyelid = 0.7; // 上まぶたを少し閉じる（笑顔の効果）
         lowerEyelid = 0.9; 
         break;
@@ -1059,7 +1231,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         // eyeWidthFactor = 0.90; // 少し幅を狭める
         // eyeHeightFactor = 0.90; // 少し縦に狭める
         // pupilSizeFactor = 0.9; // 瞳を少し小さく
-        // eyeYOffset = params.eyeSize * 0.1; // 少し下にシフト
+        eyeYOffset = params.eyeSize * 0.1; // 少し下にシフト
         // pupilYOffset = params.eyeSize * 0.05; // 瞳を少し下にずらす
         upperEyelid = 0.75; // 上まぶたを少し下げる
         // lowerEyelid = 0.95; // 下まぶたを少し上げる
@@ -1136,9 +1308,22 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       rightLowerEyelid = 0.0; // 右目は開いたまま
     }
     
+    // 実際の目の位置を記録（当たり判定用）
+    const leftEyeX = p5.width / 2 - params.eyeSpacing;
+    const leftEyeY = p5.height / 2 - params.eyeYOffset + eyeYOffset;
+    const rightEyeX = p5.width / 2 + params.eyeSpacing;
+    const rightEyeY = p5.height / 2 - params.eyeYOffset + eyeYOffset;
+    
+    // グローバルに目の位置を保存（当たり判定で使用）
+    p5.actualEyePositions = {
+      left: { x: leftEyeX, y: leftEyeY },
+      right: { x: rightEyeX, y: rightEyeY },
+      hitRadius: params.eyeSize * 0.5
+    };
+    
     // 左目の描画
     p5.push(); // 現在の描画設定を保存
-    p5.translate(p5.width / 2 - params.eyeSpacing, p5.height / 2 - params.eyeYOffset + eyeYOffset);
+    p5.translate(leftEyeX, leftEyeY);
     p5.rotate(eyeAngle);
     
     // まぶたの効果を適用して目を描画
@@ -1148,7 +1333,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // 右目の描画
     p5.push();
-    p5.translate(p5.width / 2 + params.eyeSpacing, p5.height / 2 - params.eyeYOffset + eyeYOffset);
+    p5.translate(rightEyeX, rightEyeY);
     p5.rotate(-eyeAngle); // 左右対称になるよう符号を反転
     
     // まぶたの効果を適用して目を描画
@@ -1878,6 +2063,54 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.noStroke();
   };
 
+  // 当たり判定を可視化する関数
+  const drawHitBoxes = (p5, params) => {
+    // p5から実際の目の位置を取得（描画関数で設定されたもの）
+    let eyePositions = p5.actualEyePositions;
+    let eyeHitRadius = params.eyeSize * 0.5;
+    
+    if (eyePositions) {
+      eyeHitRadius = eyePositions.hitRadius;
+    } else {
+      // フォールバック：基本的な計算で位置を推定
+      const headMovement = headMovementRef.current;
+      eyePositions = {
+        left: { 
+          x: p5.width / 2 - params.eyeSpacing + headMovement.x, 
+          y: p5.height / 2 - params.eyeYOffset + headMovement.y 
+        },
+        right: { 
+          x: p5.width / 2 + params.eyeSpacing + headMovement.x, 
+          y: p5.height / 2 - params.eyeYOffset + headMovement.y 
+        }
+      };
+    }
+    
+    // 当たり判定円を描画（半透明の赤色）
+    p5.push();
+    p5.fill(255, 0, 0, 100); // 半透明の赤
+    p5.stroke(255, 0, 0, 200); // 赤い枠線
+    p5.strokeWeight(3);
+    
+    // 左目の当たり判定
+    p5.ellipse(eyePositions.left.x, eyePositions.left.y, eyeHitRadius * 2, eyeHitRadius * 2);
+    
+    // 右目の当たり判定
+    p5.ellipse(eyePositions.right.x, eyePositions.right.y, eyeHitRadius * 2, eyeHitRadius * 2);
+    
+    p5.pop();
+    
+    // 説明テキストを表示
+    p5.push();
+    p5.fill(255, 255, 0); // 黄色のテキスト
+    p5.textSize(16 * scaleFactorRef.current);
+    p5.textAlign(p5.CENTER, p5.TOP);
+    p5.text('赤い円: 目の当たり判定（表情変更）', p5.width / 2, 20 * scaleFactorRef.current);
+    p5.text('赤い円以外: 瞳孔移動', p5.width / 2, 45 * scaleFactorRef.current);
+    p5.text('Hキー: 当たり判定表示切り替え', p5.width / 2, 70 * scaleFactorRef.current);
+    p5.pop();
+  };
+
   // キャンバスがリサイズされたときにp5のキャンバスサイズも更新
   const windowResized = (p5) => {
     if (fullScreen && p5.canvas) {
@@ -1993,6 +2226,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       if (onDisplayModeToggle) {
         onDisplayModeToggle();
       }
+    } else if (p5.key === 'h' || p5.key === 'H') {
+      // Hキーで当たり判定の表示切り替え
+      const newShowHitBoxes = !showHitBoxesRef.current; // refの現在値を使用
+      setShowHitBoxes(newShowHitBoxes);
+      showHitBoxesRef.current = newShowHitBoxes; // refも即座に更新
+      console.log('Hキー: 当たり判定表示切り替え ->', newShowHitBoxes);
     } else if (p5.key === 'p' || p5.key === 'P') {
       // Pキーでピクチャーインピクチャーモードの切り替え
       togglePictureInPicture();
