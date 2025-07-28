@@ -86,7 +86,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   });
   
   // 表情の種類
-  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink';
+  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'mouth3';
   // 表情を状態で保持
   const [expression, setExpression] = useState<FacialExpression>('neutral');
   const prevExpressionRef = useRef<FacialExpression>('neutral');
@@ -196,7 +196,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
     // 表情が有効かどうかをチェックする関数
     const isValidExpression = (exp: string): boolean => {
-      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink'].includes(exp);
+      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink', 'mouth3'].includes(exp);
     };
 
     // 表情をROS2サーバーに送信する関数
@@ -1358,6 +1358,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'wink':
         mouthY -= params.eyeSize * 0.3; // 口をもう少し下に配置
         break;
+      case 'mouth3':
+        mouthY -= params.eyeSize * 0.05; // 口の位置を調整
+        break;
     }
     
     switch (expression) {
@@ -1647,6 +1650,42 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         );
         p5.endShape();
         break;
+        
+      case 'mouth3': // 口が数字の3の形
+        // 数字の3の形を模した口を描画
+        const mouth3Width = mouthWidth * 0.6; // 横幅を調整
+        const mouth3Height = mouthHeight * 1.25; // 縦幅を調整
+        
+        p5.beginShape();
+        p5.noFill();
+        
+        // 3の上部分の曲線（右向きの半円）
+        const topCenterY = mouthY + mouth3Height * 0.1;
+        p5.vertex(p5.width / 1.85 - mouth3Width / 2.9, topCenterY - mouth3Height * 0.31);
+        p5.bezierVertex(
+          p5.width / 2 + mouth3Width * 0.2, topCenterY - mouth3Height * 0.9,
+          p5.width / 2 + mouth3Width * 0.4, topCenterY - mouth3Height * 0.1,
+          p5.width / 2, topCenterY
+        ); // 引数の説明：(x1, y1, x2, y2, x3, y3),
+        p5.endShape();
+        
+        // 3の中間部分（短い水平線）
+        // p5.beginShape();
+        // p5.vertex(p5.width / 2 - mouth3Width * 0.2, mouthY);
+        // p5.vertex(p5.width / 2 + mouth3Width * 0.1, mouthY);
+        // p5.endShape();
+        
+        // 3の下部分の曲線（右向きの半円）
+        p5.beginShape();
+        const bottomCenterY = mouthY + mouth3Height * 0.1;
+        p5.vertex(p5.width / 2, bottomCenterY);
+        p5.bezierVertex(
+          p5.width / 2 + mouth3Width * 0.4, bottomCenterY + mouth3Height * 0.0,
+          p5.width / 2 + mouth3Width * 0.2, bottomCenterY + mouth3Height * 0.8,
+          p5.width / 1.7 - mouth3Width / 1.9, bottomCenterY + mouth3Height * 0.4
+        );
+        p5.endShape();
+        break;
     }
     
     // ストロークの設定をリセット
@@ -1768,7 +1807,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     //     onImagePathChange(newImagePath);
     //   }
     // } 
-    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '8') {
+    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
       // 顔モードで数字キーが押された場合、表情を変更
       const expressionMap: Record<string, FacialExpression> = {
         '1': 'neutral',
@@ -1778,7 +1817,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         '5': 'surprised',
         '6': 'crying',
         '7': 'hurt',
-        '8': 'wink'
+        '8': 'wink',
+        '9': 'mouth3'
       };
       const newExpression = expressionMap[p5.key];
       console.log(`キー ${p5.key} が押されました。表情を ${newExpression} に変更します。`);
