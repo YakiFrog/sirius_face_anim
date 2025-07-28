@@ -1370,7 +1370,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // 撫で時間を左上に表示する関数
   const drawStrokingTime = (p5) => {
-    if (!isDragging || strokingTime <= 0 || !showStrokingTime) return;
+    if (!isDragging || strokingTime <= 0 || showStrokingTimeRef.current) return; // showStrokingTimeがtrueの時は表示しない（H表示状態では非表示）
     
     p5.push();
     
@@ -1404,7 +1404,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // 目のタップ回数を右上に表示する関数
   const drawEyeTapCount = (p5) => {
-    if (!showStrokingTime) return; // 撫で時間表示と連動して表示
+    if (showStrokingTimeRef.current) return; // showStrokingTimeがtrueの時は表示しない（H表示状態では非表示）
     
     // 現在時刻から10秒以内のタップ回数を計算
     const now = Date.now();
