@@ -1663,14 +1663,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'mouth3': // 口が数字の3の形
         // 数字の3の形を模した口を描画
         const mouth3Width = mouthWidth * 0.6; // 横幅を調整
-        const mouth3Height = mouthHeight * 1.25; // 縦幅を調整
+        const mouth3Height = mouthHeight * 1.15; // 縦幅を調整
         
         p5.beginShape();
         p5.noFill();
         
         // 3の上部分の曲線（右向きの半円）
-        const topCenterY = mouthY + mouth3Height * 0.1;
-        p5.vertex(p5.width / 1.85 - mouth3Width / 2.9, topCenterY - mouth3Height * 0.31);
+        const topCenterY = mouthY + mouth3Height * 0.2;
+        p5.vertex(p5.width / 1.85 - mouth3Width / 2.9, topCenterY - mouth3Height * 0.40);
         p5.bezierVertex(
           p5.width / 2 + mouth3Width * 0.2, topCenterY - mouth3Height * 0.9,
           p5.width / 2 + mouth3Width * 0.4, topCenterY - mouth3Height * 0.1,
@@ -1678,15 +1678,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         ); // 引数の説明：(x1, y1, x2, y2, x3, y3),
         p5.endShape();
         
-        // 3の中間部分（短い水平線）
-        // p5.beginShape();
-        // p5.vertex(p5.width / 2 - mouth3Width * 0.2, mouthY);
-        // p5.vertex(p5.width / 2 + mouth3Width * 0.1, mouthY);
-        // p5.endShape();
-        
         // 3の下部分の曲線（右向きの半円）
         p5.beginShape();
-        const bottomCenterY = mouthY + mouth3Height * 0.1;
+        const bottomCenterY = mouthY + mouth3Height * 0.2;
         p5.vertex(p5.width / 2, bottomCenterY);
         p5.bezierVertex(
           p5.width / 2 + mouth3Width * 0.4, bottomCenterY + mouth3Height * 0.0,
