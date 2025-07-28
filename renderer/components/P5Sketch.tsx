@@ -1000,6 +1000,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         upperEyelid = 1.0; // 左目は開いたまま
         lowerEyelid = 1.0; // 左目は開いたまま
         break;
+        
+      case 'mouth3': // 口が3の形
+        eyeAngle = 0; // 通常の角度
+        eyeWidthFactor = 1.0; // 通常サイズ
+        eyeHeightFactor = 1.0; // 通常サイズ
+        pupilSizeFactor = 0.55; // 瞳のサイズを半分に
+        upperEyelid = 1.0; // 完全に開く
+        lowerEyelid = 1.0; // 完全に開く
+        break;
     }
     
     // 調整されたサイズを適用
