@@ -104,6 +104,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // 瞳の手動制御用状態
   const manualPupilTargetRef = useRef<{ x: number, y: number } | null>(null);
   const manualPupilTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // ドラッグ検出用状態
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false); // refでも管理して即座にアクセス
+  const dragStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
+  const dragCurrentRef = useRef<{ x: number, y: number } | null>(null);
+  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // マウス位置記録のための状態
   const [savedMousePosition, setSavedMousePosition] = useState<{ x: number, y: number } | null>(null);
@@ -539,6 +546,14 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     canvas.elt.addEventListener('click', handleTap);
     canvas.elt.addEventListener('touchend', handleTap);
     
+    // ドラッグイベントの追加
+    canvas.elt.addEventListener('mousedown', handleDragStart);
+    canvas.elt.addEventListener('mousemove', handleDragMove);
+    canvas.elt.addEventListener('mouseup', handleDragEnd);
+    canvas.elt.addEventListener('touchstart', handleDragStart);
+    canvas.elt.addEventListener('touchmove', handleDragMove);
+    canvas.elt.addEventListener('touchend', handleDragEnd);
+    
     // 通常のDOM keydownイベントも追加（デバッグ用）
     canvas.elt.addEventListener('keydown', (event) => {
       console.log('DOM keydown イベント:', event.key, 'displayMode:', displayMode);
@@ -628,8 +643,180 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
   };
 
+  // ドラッグ開始を検出するハンドラ
+  const handleDragStart = (event) => {
+    const touchEvent = event.touches ? event.touches[0] : event;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = touchEvent.clientX - rect.left;
+    const y = touchEvent.clientY - rect.top;
+    
+    dragStartRef.current = { x, y, time: Date.now() };
+    dragCurrentRef.current = { x, y };
+    setIsDragging(false);
+    isDraggingRef.current = false; // refも同期
+    
+    console.log('ドラッグ開始候補:', { x, y });
+  };
+
+  // ドラッグ中を検出するハンドラ
+  const handleDragMove = (event) => {
+    if (!dragStartRef.current) return;
+    
+    const touchEvent = event.touches ? event.touches[0] : event;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = touchEvent.clientX - rect.left;
+    const y = touchEvent.clientY - rect.top;
+    
+    dragCurrentRef.current = { x, y };
+    
+    // ドラッグ距離を計算
+    const deltaX = x - dragStartRef.current.x;
+    const deltaY = y - dragStartRef.current.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    // 一定距離以上移動したらドラッグとして認識（一度だけログ出力）
+    const dragThreshold = 20; // ピクセル
+    if (distance > dragThreshold && !isDraggingRef.current) {
+      setIsDragging(true);
+      isDraggingRef.current = true; // refも即座に更新
+      console.log('ドラッグ開始検出:', { distance, start: dragStartRef.current, current: { x, y } });
+    }
+  };
+
+  // ドラッグ終了を検出するハンドラ
+  const handleDragEnd = (event) => {
+    console.log('=== ドラッグ終了処理開始 ===');
+    console.log('isDragging state:', isDragging);
+    console.log('isDraggingRef.current:', isDraggingRef.current);
+    console.log('dragStartRef.current:', dragStartRef.current);
+    console.log('dragCurrentRef.current:', dragCurrentRef.current);
+    
+    if (!dragStartRef.current || !dragCurrentRef.current) {
+      console.log('ドラッグデータ不完全 - リセット');
+      dragStartRef.current = null;
+      dragCurrentRef.current = null;
+      setIsDragging(false);
+      isDraggingRef.current = false;
+      return;
+    }
+    
+    // ドラッグだった場合の処理（refを使用）
+    if (isDraggingRef.current) {
+      const deltaX = dragCurrentRef.current.x - dragStartRef.current.x;
+      const deltaY = dragCurrentRef.current.y - dragStartRef.current.y;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const duration = Date.now() - dragStartRef.current.time;
+      
+      console.log('ドラッグ終了:', { distance, duration, isDragging: isDraggingRef.current });
+      
+      // ドラッグが目以外の場所で行われたかチェック
+      const isOutsideEyes = checkIfDragOutsideEyes(dragStartRef.current, dragCurrentRef.current);
+      console.log('目以外でのドラッグ:', isOutsideEyes);
+      console.log('距離条件:', distance > 20);
+      console.log('時間条件:', duration > 100);
+      
+      if (isOutsideEyes && distance > 20 && duration > 100) { // 条件を緩和
+        // 笑顔かウインクをランダムに選択
+        const expressions: FacialExpression[] = ['happy', 'wink'];
+        const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+        
+        console.log('🎉 撫で動作検出 - 表情変更:', randomExpression);
+        setManualExpression(randomExpression);
+        
+        // 3秒後に元の表情に戻す
+        if (dragTimeoutRef.current) {
+          clearTimeout(dragTimeoutRef.current);
+        }
+        dragTimeoutRef.current = setTimeout(() => {
+          console.log('撫で効果終了 - neutralに戻す');
+          setManualExpression('neutral');
+        }, 3000);
+      } else {
+        console.log('撫で動作の条件未満:', { isOutsideEyes, distance, duration });
+      }
+    } else {
+      // 短いタップの場合は既存のタップ処理を実行
+      // ただし、重複を避けるためにここでは直接タップ処理を呼ばない
+      // 代わりにclickイベントが自然に発生する
+      console.log('短いタップとして処理');
+    }
+    
+    // ドラッグ状態をリセット
+    console.log('ドラッグ状態リセット');
+    dragStartRef.current = null;
+    dragCurrentRef.current = null;
+    setIsDragging(false);
+    isDraggingRef.current = false;
+    console.log('=== ドラッグ終了処理完了 ===');
+  };
+
+  // ドラッグが目以外の場所で行われたかチェックする関数
+  const checkIfDragOutsideEyes = (start: { x: number, y: number }, end: { x: number, y: number }) => {
+    // 基本的な計算で位置を推定
+    const scale = scaleFactorRef.current;
+    const baseEyeSize = baseWidth / 4.5;
+    const baseEyeSpacing = baseEyeSize * 1;
+    const baseEyeYOffset = baseHeight / 8;
+    
+    const eyeSize = baseEyeSize * scale * 1.2;
+    const eyeSpacing = baseEyeSpacing * scale * currentEyeSpacingFactor;
+    const eyeYOffset = baseEyeYOffset * scale;
+    
+    const headMovement = headMovementRef.current;
+    
+    const eyePositions = {
+      left: { 
+        x: dimensions.width / 2 - eyeSpacing + headMovement.x, 
+        y: dimensions.height / 2 - eyeYOffset + headMovement.y 
+      },
+      right: { 
+        x: dimensions.width / 2 + eyeSpacing + headMovement.x, 
+        y: dimensions.height / 2 - eyeYOffset + headMovement.y 
+      }
+    };
+    const eyeHitRadius = eyeSize * 0.5;
+    
+    console.log('目の位置チェック:');
+    console.log('  左目:', eyePositions.left);
+    console.log('  右目:', eyePositions.right);
+    console.log('  判定半径:', eyeHitRadius);
+    console.log('  ドラッグ開始:', start);
+    console.log('  ドラッグ終了:', end);
+    
+    // ドラッグの開始点と終了点の両方が目の外かチェック
+    const startOutside = !isPointInEye(start, eyePositions, eyeHitRadius);
+    const endOutside = !isPointInEye(end, eyePositions, eyeHitRadius);
+    
+    console.log('  開始点が目の外:', startOutside);
+    console.log('  終了点が目の外:', endOutside);
+    
+    return startOutside && endOutside;
+  };
+
+  // 点が目の範囲内かチェックする関数
+  const isPointInEye = (point: { x: number, y: number }, eyePositions: any, radius: number) => {
+    const distanceToLeftEye = Math.sqrt(
+      Math.pow(point.x - eyePositions.left.x, 2) + Math.pow(point.y - eyePositions.left.y, 2)
+    );
+    const distanceToRightEye = Math.sqrt(
+      Math.pow(point.x - eyePositions.right.x, 2) + Math.pow(point.y - eyePositions.right.y, 2)
+    );
+    
+    return distanceToLeftEye <= radius || distanceToRightEye <= radius;
+  };
+
   // タップ（クリック）イベントのハンドラ
   const handleTap = (event) => {
+    // ドラッグ中の場合はタップ処理をスキップ
+    if (isDraggingRef.current) {
+      console.log('ドラッグ中のためタップ処理をスキップ');
+      return;
+    }
+    
     // タップ位置を記録（タッチイベントとクリックイベントの両方に対応）
     const touchEvent = event.touches ? event.touches[0] : event;
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -2106,7 +2293,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.textSize(16 * scaleFactorRef.current);
     p5.textAlign(p5.CENTER, p5.TOP);
     p5.text('赤い円: 目の当たり判定（表情変更）', p5.width / 2, 20 * scaleFactorRef.current);
-    p5.text('赤い円以外: 瞳孔移動', p5.width / 2, 45 * scaleFactorRef.current);
+    p5.text('赤い円以外: 瞳孔移動（タップ）/ 笑顔・ウインク（撫で）', p5.width / 2, 45 * scaleFactorRef.current);
     p5.text('Hキー: 当たり判定表示切り替え', p5.width / 2, 70 * scaleFactorRef.current);
     p5.pop();
   };
