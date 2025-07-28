@@ -617,35 +617,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       drawFaceMode(p5);
     }
     
-    // マウス位置記録状態を画面左上に表示
-    drawMousePositionStatus(p5);
-    
     // 通知を画面中央に表示
     drawNotification(p5);
-  };
-
-  // マウス位置記録状態を表示する関数
-  const drawMousePositionStatus = (p5) => {
-    // 文字のスタイル設定
-    p5.fill(255); // 白色
-    p5.textAlign(p5.LEFT, p5.TOP);
-    p5.textSize(16);
-    
-    // refを優先的に使用
-    const currentPosition = savedMousePositionRef.current || savedMousePosition;
-    
-    // 記録状態の表示
-    const statusText = currentPosition 
-      ? `記録されたマウス位置: (${currentPosition.x}, ${currentPosition.y})`
-      : `マウス位置が記録されていません`;
-    
-    p5.text(statusText, 10, 10);
-    p5.text('Q: マウス位置を記録 | W: 記録位置に移動', 10, 30);
-    
-    // デバッグ用：stateとrefの詳細情報
-    p5.textSize(12);
-    p5.text(`State: ${JSON.stringify(savedMousePosition)}`, 10, 60);
-    p5.text(`Ref: ${JSON.stringify(savedMousePositionRef.current)}`, 10, 80);
   };
 
   // 通知を画面中央に表示する関数
@@ -1953,7 +1926,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           console.log('マウス位置を記録しました:', result.position);
           
           // 通知を表示
-          showNotification(`マウス位置を記録しました\n(${result.position.x}, ${result.position.y})`, 2000);
+            showNotification(`マウス位置を記録しました：(${result.position.x}, ${result.position.y})\nWキーで移動＋クリック`, 2000);
         } else {
           console.error('マウス位置の取得に失敗しました:', result.error);
         }
