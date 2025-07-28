@@ -121,6 +121,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const strokingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const strokingExpressionTimerSet = useRef(false); // 撫で表情タイマーが設定済みかの追跡
 
+  // 目のタップ回数追跡用状態
+  const eyeTapCountRef = useRef(0); // 10秒間のタップ回数
+  const eyeTapTimestampsRef = useRef<number[]>([]); // タップの時刻を記録
+  const eyeOverTapReactionRef = useRef(false); // 過度なタップ反応済みフラグ
+  const eyeOverTapReactionStartTime = useRef<number>(0); // 過度なタップ反応開始時刻
+
   // マウス位置記録のための状態
   const [savedMousePosition, setSavedMousePosition] = useState<{ x: number, y: number } | null>(null);
   // refを使って即座にアクセスできるようにする
@@ -169,9 +175,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     const fetchExpression = async () => {
       if (!isPollingActive) return; // ポーリングが無効化されていたら何もしない
       
-      // 手動表情変更中はポーリングをスキップ
-      if (manualExpressionRef.current.isManual) {
-        console.log('手動表情変更中のため、ポーリングをスキップします');
+      // 手動表情変更中または過度なタップ反応中はポーリングをスキップ
+      const now = Date.now();
+      const isInOverTapReaction = eyeOverTapReactionRef.current && 
+        (now - eyeOverTapReactionStartTime.current) < 12000; // 12秒間保護
+      
+      if (manualExpressionRef.current.isManual || isInOverTapReaction) {
+        if (manualExpressionRef.current.isManual) {
+          console.log('手動表情変更中のため、ポーリングをスキップします');
+        }
+        if (isInOverTapReaction) {
+          console.log('過度なタップ反応中のため、ポーリングをスキップします');
+        }
         return;
       }
       
@@ -197,9 +212,18 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
             const newExpression = data.expression as FacialExpression;
             console.log(`比較: 受信=${newExpression}, 現在の表情=${newExpression}`);
             
-            // 表情を更新（常に新しい値をセット）
-            setExpression(newExpression);
-            console.log(`✅ 表情更新: ${newExpression}`);
+            // 過度なタップ反応中は外部からの表情変更を無視
+            const now = Date.now();
+            const isInOverTapReaction = eyeOverTapReactionRef.current && 
+              (now - eyeOverTapReactionStartTime.current) < 10000;
+            
+            if (isInOverTapReaction) {
+              console.log(`⛔ 過度なタップ反応中のため、ROS2表情変更を無視: ${newExpression}`);
+            } else {
+              // 表情を更新（常に新しい値をセット）
+              setExpression(newExpression);
+              console.log(`✅ 表情更新: ${newExpression}`);
+            }
           }
           
           // 接続状態を更新
@@ -342,11 +366,121 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // ROS2サーバーにも新しい表情を送信（重要！）
     sendExpressionToRos2(newExpression);
     
-    // 5秒後に手動変更フラグを解除（ポーリング再開）
-    manualExpressionRef.current.timeout = setTimeout(() => {
-      console.log('手動表情変更の一時停止を解除します');
-      manualExpressionRef.current.isManual = false;
-    }, 5000); // 5秒間ポーリングを停止
+    // 過度なタップ反応中かチェック
+    const now = Date.now();
+    const isInOverTapReaction = eyeOverTapReactionRef.current && 
+      (now - eyeOverTapReactionStartTime.current) < 10000;
+    
+    // 手動変更フラグの解除タイミングを調整
+    if (isInOverTapReaction) {
+      // 過度なタップ反応中は15秒後まで手動フラグを維持（表情を確実に保護）
+      console.log('過度なタップ反応中のため、手動フラグを15秒間維持');
+      manualExpressionRef.current.timeout = setTimeout(() => {
+        console.log('過度なタップ反応中の手動表情変更を解除');
+        manualExpressionRef.current.isManual = false;
+      }, 15000);
+    } else {
+      // 通常時は5秒後に手動変更フラグを解除（ポーリング再開）
+      manualExpressionRef.current.timeout = setTimeout(() => {
+        console.log('手動表情変更の一時停止を解除します');
+        manualExpressionRef.current.isManual = false;
+      }, 5000); // 5秒間ポーリングを停止
+    }
+  };
+
+  // 目のタップ回数を管理し、過度なタップに反応する関数
+  const handleEyeTap = () => {
+    const now = Date.now();
+    
+    // 現在時刻を記録（過度なタップ反応中でもカウントは継続）
+    eyeTapTimestampsRef.current.push(now);
+    
+    // 10秒より古いタップ記録を削除
+    eyeTapTimestampsRef.current = eyeTapTimestampsRef.current.filter(
+      timestamp => now - timestamp <= 10000 // 10秒 = 10000ms
+    );
+    
+    const recentTapCount = eyeTapTimestampsRef.current.length;
+    console.log(`👁️ 目タップ回数（過去10秒）: ${recentTapCount}/10`);
+    
+    // 過度なタップ反応中かチェック（表情変更のブロックのみ、カウントは継続）
+    const isInOverTapReaction = eyeOverTapReactionRef.current && 
+      (now - eyeOverTapReactionStartTime.current) < 10000;
+    
+    if (isInOverTapReaction) {
+      console.log(`⛔ 過度なタップ反応中だが、カウントは継続 (${recentTapCount}回)`);
+      return 'in_reaction'; // 反応中だが、カウントは有効
+    }
+    
+    // タップ回数が7回以上になったら警告ログ
+    if (recentTapCount >= 7 && recentTapCount < 10) {
+      console.log(`⚠️ 警告: 目タップ回数が多くなっています (${recentTapCount}/10)`);
+    }
+    
+    // 10回以上タップされた場合の反応（まだ反応していない場合のみ）
+    if (recentTapCount >= 10 && !eyeOverTapReactionRef.current) {
+      eyeOverTapReactionRef.current = true; // 反応済みフラグを設定
+      eyeOverTapReactionStartTime.current = now; // 反応開始時刻を記録
+      
+      // 怒りか泣きをランダムに選択
+      const overTapExpressions: FacialExpression[] = ['angry', 'crying'];
+      const randomExpression = overTapExpressions[Math.floor(Math.random() * overTapExpressions.length)];
+      
+      console.log(`🔥 過度なタップ検出！${recentTapCount}回 - 表情: ${randomExpression}`);
+      setManualExpression(randomExpression);
+      
+      // 過度なタップ反応の表情を7-10秒間維持（ランダム要素でより自然に）
+      const expressionDuration = 7000 + Math.random() * 3000; // 7-10秒
+      console.log(`😠 ${randomExpression}表情を${Math.round(expressionDuration/1000)}秒間維持します`);
+      
+      setTimeout(() => {
+        console.log('過度なタップ反応表情から復帰処理開始');
+        
+        // 復帰時点での最近のタップ状況をチェック
+        const currentTime = Date.now();
+        const recentTapsAtRecovery = eyeTapTimestampsRef.current.filter(
+          timestamp => currentTime - timestamp <= 10000
+        );
+        
+        // 最後のタップからの経過時間もチェック
+        const lastTapTime = eyeTapTimestampsRef.current.length > 0 ? 
+          Math.max(...eyeTapTimestampsRef.current) : 0;
+        const timeSinceLastTap = currentTime - lastTapTime;
+        
+        // 最近のタップがあり、かつ最後のタップから3秒以内の場合はhurt表情
+        if (recentTapsAtRecovery.length > 0 && timeSinceLastTap < 3000) {
+          console.log(`復帰時にタップ継続中 (${recentTapsAtRecovery.length}回, 最後のタップから${Math.round(timeSinceLastTap/1000)}秒) - hurt表情に設定`);
+          setManualExpression('hurt');
+          
+          // hurt表情も1.5秒後にneutralに戻す
+          setTimeout(() => {
+            console.log('hurt表情からneutralに復帰');
+            setManualExpression('neutral');
+          }, 1500);
+        } else {
+          console.log(`復帰時にタップ停止済み (最後のタップから${Math.round(timeSinceLastTap/1000)}秒) - neutral表情に設定`);
+          setManualExpression('neutral');
+        }
+      }, expressionDuration);
+      
+      // 12秒後にフラグをリセット（再度反応できるようにする）
+      setTimeout(() => {
+        eyeOverTapReactionRef.current = false;
+        eyeOverTapReactionStartTime.current = 0;
+        
+        // 手動表情フラグも確実にリセット（ポーリング再開を保証）
+        if (manualExpressionRef.current.timeout) {
+          clearTimeout(manualExpressionRef.current.timeout);
+        }
+        manualExpressionRef.current.isManual = false;
+        
+        console.log('過度なタップ反応フラグをリセット + 手動表情フラグもリセット');
+      }, 12000);
+      
+      return true; // 過度なタップ反応したことを示す
+    }
+    
+    return false; // 通常のタップ
   };
 
   // 画像読み込み処理
@@ -546,6 +680,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       if (dragTimeoutRef.current) {
         clearTimeout(dragTimeoutRef.current);
       }
+      // 目のタップ記録のクリーンアップ
+      eyeTapTimestampsRef.current = [];
+      eyeOverTapReactionRef.current = false;
+      eyeOverTapReactionStartTime.current = 0;
     };
   }, []);
   
@@ -966,6 +1104,19 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       // 目の範囲内をタップした場合：表情を変える
       console.log('目をタップ - 表情変更');
       
+      // 目のタップ回数を記録・チェック
+      const tapResult = handleEyeTap();
+      
+      // 過度なタップ反応が発生した場合、または反応中の場合はhurt表情をスキップ
+      if (tapResult === true || tapResult === 'in_reaction') {
+        if (tapResult === true) {
+          console.log('過度なタップ反応のためhurt表情をスキップ');
+        } else {
+          console.log('過度なタップ反応中だが、タップカウントは継続');
+        }
+        return;
+      }
+      
       // より詳細なデバッグ情報を出力
       console.log('React state expression:', expression);
       console.log('prevExpressionRef.current:', prevExpressionRef.current);
@@ -1054,6 +1205,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // 撫で時間を左上に表示
     drawStrokingTime(p5);
+    
+    // 目のタップ回数を右上に表示
+    drawEyeTapCount(p5);
   };
 
   // 通知を画面中央に表示する関数
@@ -1128,6 +1282,69 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 撫で時間を秒単位で表示
     const timeText = `撫で時間: ${strokingTime.toFixed(1)}秒`;
     p5.text(timeText, margin + boxWidth / 2, margin + boxHeight / 2);
+    
+    p5.pop();
+  };
+
+  // 目のタップ回数を右上に表示する関数
+  const drawEyeTapCount = (p5) => {
+    if (!showStrokingTime) return; // 撫で時間表示と連動して表示
+    
+    // 現在時刻から10秒以内のタップ回数を計算
+    const now = Date.now();
+    const recentTaps = eyeTapTimestampsRef.current.filter(
+      timestamp => now - timestamp <= 10000
+    );
+    const tapCount = recentTaps.length;
+    
+    if (tapCount === 0) return; // タップ回数が0の場合は表示しない
+    
+    p5.push();
+    
+    // 背景設定
+    const boxWidth = 220;
+    const boxHeight = 60;
+    const margin = 20;
+    const rightMargin = p5.width - boxWidth - margin;
+    
+    // タップ回数に応じて色を変更
+    let backgroundColor, borderColor, textColor;
+    if (tapCount >= 10) {
+      // 10回以上は危険色（赤）
+      backgroundColor = [255, 0, 0, 120];
+      borderColor = [255, 100, 100];
+      textColor = [255, 255, 255];
+    } else if (tapCount >= 7) {
+      // 7-9回は警告色（オレンジ）
+      backgroundColor = [255, 165, 0, 120];
+      borderColor = [255, 200, 0];
+      textColor = [255, 255, 255];
+    } else {
+      // 6回以下は通常色（青）
+      backgroundColor = [0, 100, 255, 120];
+      borderColor = [100, 150, 255];
+      textColor = [255, 255, 255];
+    }
+    
+    // 半透明の背景
+    p5.fill(...backgroundColor);
+    p5.rect(rightMargin, margin, boxWidth, boxHeight, 8);
+    
+    // 枠線
+    p5.stroke(...borderColor);
+    p5.strokeWeight(2);
+    p5.noFill();
+    p5.rect(rightMargin, margin, boxWidth, boxHeight, 8);
+    
+    // テキスト設定
+    p5.fill(...textColor);
+    p5.noStroke();
+    p5.textAlign(p5.CENTER, p5.CENTER);
+    p5.textSize(14);
+    
+    // タップ回数を表示
+    const tapText = `目タップ数: ${tapCount}/10 (10秒)`;
+    p5.text(tapText, rightMargin + boxWidth / 2, margin + boxHeight / 2);
     
     p5.pop();
   };
