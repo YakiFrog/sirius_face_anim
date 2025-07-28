@@ -97,6 +97,20 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   // タップ前の表情を記録するためのref
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
 
+  // マウス位置記録のための状態
+  const [savedMousePosition, setSavedMousePosition] = useState<{ x: number, y: number } | null>(null);
+  // refを使って即座にアクセスできるようにする
+  const savedMousePositionRef = useRef<{ x: number, y: number } | null>(null);
+  
+  // デバウンス用のref
+  const mouseActionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActionTimeRef = useRef<number>(0);
+
+  // savedMousePositionの変更を監視（デバッグ用）
+  useEffect(() => {
+    console.log('🔄 savedMousePosition state changed:', savedMousePosition);
+  }, [savedMousePosition]);
+
   // HTTP接続による表情取得とポーリング
   useEffect(() => {
     // ROS2接続が有効でない場合は何もしない
@@ -491,6 +505,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         event.preventDefault();
         event.stopPropagation();
       }
+      // QとWキーの処理はp5のhandleKeyPressに集約して重複を避ける
     });
     
     // キーボード入力処理をsetupで設定
@@ -555,6 +570,33 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       // 顔表示モード（既存の処理）
       drawFaceMode(p5);
     }
+    
+    // マウス位置記録状態を画面左上に表示
+    drawMousePositionStatus(p5);
+  };
+
+  // マウス位置記録状態を表示する関数
+  const drawMousePositionStatus = (p5) => {
+    // 文字のスタイル設定
+    p5.fill(255); // 白色
+    p5.textAlign(p5.LEFT, p5.TOP);
+    p5.textSize(16);
+    
+    // refを優先的に使用
+    const currentPosition = savedMousePositionRef.current || savedMousePosition;
+    
+    // 記録状態の表示
+    const statusText = currentPosition 
+      ? `記録されたマウス位置: (${currentPosition.x}, ${currentPosition.y})`
+      : `マウス位置が記録されていません`;
+    
+    p5.text(statusText, 10, 10);
+    p5.text('Q: マウス位置を記録 | W: 記録位置に移動', 10, 30);
+    
+    // デバッグ用：stateとrefの詳細情報
+    p5.textSize(12);
+    p5.text(`State: ${JSON.stringify(savedMousePosition)}`, 10, 60);
+    p5.text(`Ref: ${JSON.stringify(savedMousePositionRef.current)}`, 10, 80);
   };
 
   // 画像表示モードの描画処理
@@ -1779,6 +1821,85 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }
   };
 
+  // マウス位置を記録する関数（デバウンス付き）
+  const saveMousePosition = async () => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < 200) {
+      console.log('デバウンス: saveMousePosition呼び出しをスキップ');
+      return;
+    }
+    lastActionTimeRef.current = now;
+    
+    console.log('saveMousePosition関数が呼び出されました');
+    console.log('現在のsavedMousePosition state:', savedMousePosition);
+    
+    try {
+      if (typeof window !== 'undefined' && window.ipc) {
+        console.log('IPC通信でマウス位置を取得中...');
+        const result = await window.ipc.getCursorPosition();
+        console.log('IPC通信の結果:', result);
+        
+        if (result.success) {
+          console.log('setStateを実行します:', result.position);
+          setSavedMousePosition(result.position);
+          savedMousePositionRef.current = result.position; // refも同時に更新
+          console.log('マウス位置を記録しました:', result.position);
+        } else {
+          console.error('マウス位置の取得に失敗しました:', result.error);
+        }
+      } else {
+        console.error('IPCが利用できません');
+      }
+    } catch (error) {
+      console.error('マウス位置記録中にエラーが発生しました:', error);
+    }
+  };
+
+  // 記録したマウス位置に移動する関数（デバウンス付き）
+  const restoreMousePosition = async () => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < 200) {
+      console.log('デバウンス: restoreMousePosition呼び出しをスキップ');
+      return;
+    }
+    lastActionTimeRef.current = now;
+    
+    console.log('restoreMousePosition関数が呼び出されました');
+    console.log('現在のsavedMousePosition state:', savedMousePosition);
+    console.log('現在のsavedMousePositionRef:', savedMousePositionRef.current);
+    
+    // refを優先的に使用
+    const positionToUse = savedMousePositionRef.current || savedMousePosition;
+    
+    if (!positionToUse) {
+      console.log('記録されたマウス位置がありません');
+      return;
+    }
+    
+    console.log('マウス移動を開始:', positionToUse);
+    
+    try {
+      if (typeof window !== 'undefined' && window.ipc) {
+        console.log('IPC通信でマウス移動を要求中...');
+        const result = await window.ipc.moveCursor(positionToUse.x, positionToUse.y);
+        console.log('IPC通信の結果:', result);
+        
+        if (result.success) {
+          console.log('✅ マウスを記録位置に移動しました:', positionToUse);
+          if (result.newPosition) {
+            console.log('移動後の位置:', result.newPosition);
+          }
+        } else {
+          console.error('❌ マウス移動に失敗しました:', result.error);
+        }
+      } else {
+        console.error('❌ IPCが利用できません');
+      }
+    } catch (error) {
+      console.error('❌ マウス移動中にエラーが発生しました:', error);
+    }
+  };
+
   // キーボード入力処理を追加
   const handleKeyPress = (p5) => {
     console.log(`キー ${p5.key} が押されました (現在のモード: ${displayMode})`);
@@ -1792,25 +1913,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     } else if (p5.key === 'p' || p5.key === 'P') {
       // Pキーでピクチャーインピクチャーモードの切り替え
       togglePictureInPicture();
-    } 
-    // 画像モードでの数字キー処理を無効化（コメントアウト）
-    // else if (displayMode === 'image' && p5.key >= '1' && p5.key <= '9') {
-    //   // 画像モードで数字キーが押された場合、対応する画像に切り替え
-    //   const imageNumber = p5.key;
-    //   const newImagePath = `/screen/${imageNumber}.png`;
-    //   console.log(`数字キー ${imageNumber}: 画像を ${newImagePath} に変更`);
-    //   
-    //   // 画像をクリアしてから新しい画像をセット
-    //   setLoadedImage(null);
-    //   loadedImageRef.current = null;
-    //   setImageLoadError(null);
-    //   
-    //   // 親コンポーネントに画像パス変更を通知
-    //   if (onImagePathChange) {
-    //     onImagePathChange(newImagePath);
-    //   }
-    // } 
-    else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
+    } else if (p5.key === 'q' || p5.key === 'Q') {
+      // Qキーでマウス位置を記録（デバウンス処理付き）
+      console.log('Qキー: マウス位置を記録');
+      saveMousePosition();
+    } else if (p5.key === 'w' || p5.key === 'W') {
+      // Wキーで記録したマウス位置に移動（デバウンス処理付き）
+      console.log('Wキー: 記録位置に移動');
+      restoreMousePosition();
+    } else if (displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
       // 顔モードで数字キーが押された場合、表情を変更
       const expressionMap: Record<string, FacialExpression> = {
         '1': 'neutral',

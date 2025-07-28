@@ -13,6 +13,9 @@ const handler = {
       ipcRenderer.removeListener(channel, subscription)
     }
   },
+  // マウス操作API
+  moveCursor: (x: number, y: number) => ipcRenderer.invoke('move-cursor', x, y),
+  getCursorPosition: () => ipcRenderer.invoke('get-cursor-position'),
 }
 
 contextBridge.exposeInMainWorld('ipc', handler)
