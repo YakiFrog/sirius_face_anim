@@ -93,6 +93,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   
   // タップ/クリック反応のための状態
   const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const noseTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 鼻タップ専用のタイムアウト
+  const cornerTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 四隅タップ専用のタイムアウト
   const tapPositionRef = useRef({ x: 0, y: 0 });
   // タップ前の表情を記録するためのref
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
@@ -810,6 +812,36 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
   };
 
+  // 撫で時間に応じて表情を段階的に変更する関数
+  const updateExpressionByStrokingTime = (strokingTimeSeconds: number) => {
+    // 撫でている間のみ表情を変更
+    if (!isDraggingRef.current) return;
+    
+    // 2秒以上撫でている場合、2秒ごとに表情をランダムに変更
+    if (strokingTimeSeconds >= 2.0) {
+      const intervalSeconds = 2;
+      const intervalCount = Math.floor(strokingTimeSeconds / intervalSeconds);
+      const currentInterval = intervalCount * intervalSeconds;
+
+      // 2秒ごとに新しい表情に変更（小数点以下0.2秒以内の時にのみ実行）
+      if (Math.abs(strokingTimeSeconds - currentInterval) < 0.2) {
+      const expressions: FacialExpression[] = ['happy', 'wink'];
+      const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+
+      // 現在の表情と異なる場合のみ変更（連続して同じ表情を避ける）
+      if (randomExpression !== expression) {
+        console.log(`💫 撫で時間 ${strokingTimeSeconds.toFixed(1)}秒 - 表情を${randomExpression}に変更`);
+        setManualExpression(randomExpression);
+      } else {
+        // 同じ表情の場合は反対の表情に変更
+        const alternateExpression = randomExpression === 'happy' ? 'wink' : 'happy';
+        console.log(`💫 撫で時間 ${strokingTimeSeconds.toFixed(1)}秒 - 表情を${alternateExpression}に変更（重複回避）`);
+        setManualExpression(alternateExpression);
+      }
+      }
+    }
+  };
+
   // ドラッグ開始を検出するハンドラ
   const handleDragStart = (event) => {
     const touchEvent = event.touches ? event.touches[0] : event;
@@ -870,40 +902,26 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         }
         strokingTimerRef.current = setInterval(() => {
           if (isDraggingRef.current) {
-            setStrokingTime(prev => prev + 0.1);
+            setStrokingTime(prev => {
+              const newTime = prev + 0.1;
+              
+              // 撫で時間に応じて表情を段階的に変更
+              updateExpressionByStrokingTime(newTime);
+              
+              return newTime;
+            });
           }
         }, 100); // 0.1秒ごとに更新
         
-        // 2-5秒後に表情変更するタイマーを設定
-        const randomDelay = 2000 + Math.random() * 1500; // 2000ms + 0-1500ms = 2-3.5秒
-        console.log(`🕒 撫で動作開始 - ${Math.round(randomDelay)}ms後に表情変更予定`);
+        // 従来の単発タイマーは使用しない（連続的な表情変更に変更）
+        console.log(`🎨 撫で動作開始 - 連続的な表情変更システム開始`);
         
-        // 既存のタイムアウトをクリア
+        // 既存のタイムアウトをクリア（もし設定されていた場合）
         if (dragTimeoutRef.current) {
           clearTimeout(dragTimeoutRef.current);
-          console.log('⚠️ 既存のタイマーをクリアしました');
+          dragTimeoutRef.current = null;
+          console.log('⚠️ 既存の単発タイマーをクリアしました');
         }
-        
-        console.log('⏰ 新しいタイマーを設定します...');
-        
-        // 2-5秒後に表情変更
-        dragTimeoutRef.current = setTimeout(() => {
-          console.log('=== 撫でタイマー発火 ===');
-          console.log('isDraggingRef.current:', isDraggingRef.current);
-          console.log('manualExpressionRef.current.isManual:', manualExpressionRef.current.isManual);
-          console.log('現在の表情:', expression);
-          
-          // まだドラッグ中の場合のみ変更（手動表情フラグは無視）
-          if (isDraggingRef.current) {
-            const expressions: FacialExpression[] = ['happy', 'wink'];
-            const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
-            
-            console.log('🎉 撫で継続中 - 表情変更:', randomExpression);
-            setManualExpression(randomExpression);
-          } else {
-            console.log('ドラッグが終了しているため表情変更をスキップ');
-          }
-        }, randomDelay);
       }
     }
   };
@@ -1001,7 +1019,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         y: dimensions.height / 2 - eyeYOffset + headMovement.y 
       }
     };
-    const eyeHitRadius = eyeSize * 0.5;
+    const eyeHitRadius = eyeSize * 0.3;
     
     console.log('目の位置チェック:');
     console.log('  左目:', eyePositions.left);
@@ -1078,7 +1096,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         y: dimensions.height / 2 - eyeYOffset + headMovement.y 
       }
     };
-    eyeHitRadius = eyeSize * 0.5;
+    eyeHitRadius = eyeSize * 0.3;
     
     // タップが目の範囲内かどうかをチェック
     const distanceToLeftEye = Math.sqrt(
@@ -1090,17 +1108,46 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     const isEyeTouch = distanceToLeftEye <= eyeHitRadius || distanceToRightEye <= eyeHitRadius;
     
+    // 目頭の間（鼻の位置）の当たり判定を追加
+    const noseCenterX = (eyePositions.left.x + eyePositions.right.x) / 2; // 左右の目の中間点
+    const noseCenterY = eyePositions.left.y + eyeSize * 0.3; // 目の少し下
+    const noseHitRadius = eyeSize * 0.15; // 目の当たり判定の半分程度
+    
+    const distanceToNose = Math.sqrt(
+      Math.pow(x - noseCenterX, 2) + Math.pow(y - noseCenterY, 2)
+    );
+    
+    const isNoseTouch = distanceToNose <= noseHitRadius;
+    
     console.log('=== タップイベント詳細 ===');
     console.log('タップ位置:', { x, y });
     console.log('左目中心:', eyePositions.left);
     console.log('右目中心:', eyePositions.right);
+    console.log('鼻中心:', { x: noseCenterX, y: noseCenterY });
     console.log('左目距離:', distanceToLeftEye);
     console.log('右目距離:', distanceToRightEye);
+    console.log('鼻距離:', distanceToNose);
     console.log('当たり判定半径:', eyeHitRadius);
+    console.log('鼻当たり判定半径:', noseHitRadius);
     console.log('目への接触:', isEyeTouch);
+    console.log('鼻への接触:', isNoseTouch);
     console.log('========================');
     
-    if (isEyeTouch) {
+    if (isNoseTouch) {
+      // 鼻（目頭の間）をタップした場合：驚き表情
+      console.log('鼻をタップ - 驚き表情に変更');
+      setManualExpression('surprised');
+      
+      // 2秒後に元の表情に戻す（鼻専用のタイムアウトを使用）
+      if (noseTimeoutRef.current) {
+        clearTimeout(noseTimeoutRef.current);
+      }
+      noseTimeoutRef.current = setTimeout(() => {
+        console.log('驚き表情から元に戻す');
+        setManualExpression('neutral');
+      }, 2000);
+      
+    } else if (isEyeTouch) {
       // 目の範囲内をタップした場合：表情を変える
       console.log('目をタップ - 表情変更');
       
@@ -1144,46 +1191,115 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         setManualExpression(restoreExpression);
       }, 1000);
     } else {
-      // 目以外の場所をタップした場合：瞳孔をその方向に動かす
-      console.log('目以外をタップ - 瞳孔移動');
+      // 目以外の場所をタップした場合：画面の四隅判定または瞳孔移動
+      console.log('目以外をタップ - 画面位置判定');
       
-      // 画面中央を基準とした相対位置を計算
-      const centerX = dimensions.width / 2;
-      const centerY = dimensions.height / 2;
+      // 画面の四隅の当たり判定（角から一定範囲内）
+      // 注意: 呼吸による頭の動きに影響されない画面固定座標を使用
+      const cornerRadius = 100; // 四隅の当たり判定範囲
       
-      // タップ位置への方向ベクトルを計算
-      const deltaX = x - centerX;
-      const deltaY = y - centerY;
+      // 右下角の判定（画面固定座標）
+      const isBottomRight = (x > dimensions.width - cornerRadius) && (y > dimensions.height - cornerRadius);
       
-      // 正規化して瞳の可動範囲内に収める
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      const maxRadius = eyeSize / 10; // 瞳が動ける最大範囲（eyeSizeは上で定義済み）
+      // 左下角の判定（画面固定座標）
+      const isBottomLeft = (x < cornerRadius) && (y > dimensions.height - cornerRadius);
       
-      let targetX, targetY;
-      if (distance > 0) {
-        const scale = Math.min(distance, maxRadius * 3) / distance;
-        targetX = deltaX * scale * 0.15; // スケールを調整
-        targetY = deltaY * scale * 0.15;
+      // 右上角の判定（画面固定座標）
+      const isTopRight = (x > dimensions.width - cornerRadius) && (y < cornerRadius);
+      
+      console.log('四隅判定:', {
+        position: { x, y },
+        dimensions: dimensions,
+        isBottomRight,
+        isBottomLeft,
+        isTopRight,
+        cornerRadius
+      });
+      
+      if (isBottomRight) {
+        // 右下を押した場合：口の顔（mouth3）に変更
+        console.log('右下をタップ - 口の顔（mouth3）に変更');
+        setManualExpression('mouth3');
+        
+        // 3秒後に元の表情に戻す（四隅専用のタイムアウトを使用）
+        if (cornerTimeoutRef.current) {
+          clearTimeout(cornerTimeoutRef.current);
+        }
+        cornerTimeoutRef.current = setTimeout(() => {
+          console.log('口の顔から元に戻す');
+          setManualExpression('neutral');
+        }, 3000);
+        
+      } else if (isBottomLeft) {
+        // 左下を押した場合：ウインクに変更
+        console.log('左下をタップ - ウインクに変更');
+        setManualExpression('wink');
+
+        // 3秒後に元の表情に戻す（四隅専用のタイムアウトを使用）
+        if (cornerTimeoutRef.current) {
+          clearTimeout(cornerTimeoutRef.current);
+        }
+        cornerTimeoutRef.current = setTimeout(() => {
+          console.log('ウインクから元に戻す');
+          setManualExpression('neutral');
+        }, 3000);
+        
+      } else if (isTopRight) {
+        // 右上を押した場合：泣く表情に変更
+        console.log('右上をタップ - 泣く表情に変更');
+        setManualExpression('crying');
+        
+        // 3秒後に元の表情に戻す（四隅専用のタイムアウトを使用）
+        if (cornerTimeoutRef.current) {
+          clearTimeout(cornerTimeoutRef.current);
+        }
+        cornerTimeoutRef.current = setTimeout(() => {
+          console.log('泣く表情から元に戻す');
+          setManualExpression('neutral');
+        }, 3000);
+        
       } else {
-        targetX = 0;
-        targetY = 0;
+        // 四隅以外の場所をタップした場合：瞳孔をその方向に動かす
+        console.log('四隅以外をタップ - 瞳孔移動');
+        
+        // 画面中央を基準とした相対位置を計算
+        const centerX = dimensions.width / 2;
+        const centerY = dimensions.height / 2;
+        
+        // タップ位置への方向ベクトルを計算
+        const deltaX = x - centerX;
+        const deltaY = y - centerY;
+        
+        // 正規化して瞳の可動範囲内に収める
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const maxRadius = eyeSize / 10; // 瞳が動ける最大範囲（eyeSizeは上で定義済み）
+        
+        let targetX, targetY;
+        if (distance > 0) {
+          const scale = Math.min(distance, maxRadius * 3) / distance;
+          targetX = deltaX * scale * 0.15; // スケールを調整
+          targetY = deltaY * scale * 0.15;
+        } else {
+          targetX = 0;
+          targetY = 0;
+        }
+        
+        // 手動瞳孔制御の設定
+        manualPupilTargetRef.current = { x: targetX, y: targetY };
+        
+        // 既存のタイムアウトをクリア
+        if (manualPupilTimeoutRef.current) {
+          clearTimeout(manualPupilTimeoutRef.current);
+        }
+        
+        // 3秒後に手動制御を解除
+        manualPupilTimeoutRef.current = setTimeout(() => {
+          manualPupilTargetRef.current = null;
+          console.log('瞳孔の手動制御を解除');
+        }, 3000);
+        
+        console.log('瞳孔ターゲット設定:', { targetX, targetY });
       }
-      
-      // 手動瞳孔制御の設定
-      manualPupilTargetRef.current = { x: targetX, y: targetY };
-      
-      // 既存のタイムアウトをクリア
-      if (manualPupilTimeoutRef.current) {
-        clearTimeout(manualPupilTimeoutRef.current);
-      }
-      
-      // 3秒後に手動制御を解除
-      manualPupilTimeoutRef.current = setTimeout(() => {
-        manualPupilTargetRef.current = null;
-        console.log('瞳孔の手動制御を解除');
-      }, 3000);
-      
-      console.log('瞳孔ターゲット設定:', { targetX, targetY });
     }
   };
 
@@ -1478,13 +1594,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 口を描画
     drawMouth(p5, eyeParams);
     
-    // 当たり判定を可視化（デバッグ用）
+    // 頭の動きをリセット（重要：pushを使用したら、必ずpopでリセットする）
+    p5.pop();
+    
+    // 当たり判定を可視化（デバッグ用） - 頭の動きの影響を受けないように独立して描画
     if (showHitBoxesRef.current) {
       drawHitBoxes(p5, eyeParams);
     }
-    
-    // 頭の動きをリセット（重要：pushを使用したら、必ずpopでリセットする）
-    p5.pop();
   };
 
   // 頭の動きを更新する関数
@@ -2591,15 +2707,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // 当たり判定を可視化する関数
   const drawHitBoxes = (p5, params) => {
+    // 頭の動きを取得
+    const headMovement = headMovementRef.current;
+    
     // p5から実際の目の位置を取得（描画関数で設定されたもの）
     let eyePositions = p5.actualEyePositions;
-    let eyeHitRadius = params.eyeSize * 0.5;
+    let eyeHitRadius = params.eyeSize * 0.3;
     
     if (eyePositions) {
       eyeHitRadius = eyePositions.hitRadius;
     } else {
       // フォールバック：基本的な計算で位置を推定
-      const headMovement = headMovementRef.current;
       eyePositions = {
         left: { 
           x: p5.width / 2 - params.eyeSpacing + headMovement.x, 
@@ -2612,28 +2730,68 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       };
     }
     
-    // 当たり判定円を描画（半透明の赤色）
+    // 目と鼻の当たり判定を描画（頭の動きに追従）
     p5.push();
+    
+    // 頭の動きを適用
+    p5.translate(headMovement.x, headMovement.y);
+    
     p5.fill(255, 0, 0, 100); // 半透明の赤
     p5.stroke(255, 0, 0, 200); // 赤い枠線
     p5.strokeWeight(3);
     
-    // 左目の当たり判定
-    p5.ellipse(eyePositions.left.x, eyePositions.left.y, eyeHitRadius * 2, eyeHitRadius * 2);
+    // 左目の当たり判定（頭の動きに追従）
+    p5.ellipse(p5.width / 2 - params.eyeSpacing, p5.height / 2 - params.eyeYOffset, eyeHitRadius * 2, eyeHitRadius * 2);
     
-    // 右目の当たり判定
-    p5.ellipse(eyePositions.right.x, eyePositions.right.y, eyeHitRadius * 2, eyeHitRadius * 2);
+    // 右目の当たり判定（頭の動きに追従）
+    p5.ellipse(p5.width / 2 + params.eyeSpacing, p5.height / 2 - params.eyeYOffset, eyeHitRadius * 2, eyeHitRadius * 2);
+    
+    // 鼻（目頭の間）の当たり判定（頭の動きに追従）
+    const noseCenterX = p5.width / 2; // 左右の目の中間点
+    const noseCenterY = p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.3;
+    const noseHitRadius = params.eyeSize * 0.15;
+    
+    p5.fill(0, 255, 0, 100); // 半透明の緑
+    p5.stroke(0, 255, 0, 200); // 緑い枠線
+    p5.ellipse(noseCenterX, noseCenterY, noseHitRadius * 2, noseHitRadius * 2);
+    
+    p5.pop();
+    
+    // 画面四隅の当たり判定（角から一定範囲内）
+    // 注意: 呼吸による頭の動きに影響されない画面固定座標を使用
+    // 独立したコンテキストで描画して、変形の影響を完全に排除
+    p5.push();
+    const cornerRadius = 100;
+    
+    // 右下角の当たり判定（口の表情用） - 画面固定
+    p5.fill(0, 0, 255, 100); // 半透明の青
+    p5.stroke(0, 0, 255, 200); // 青い枠線
+    p5.rect(p5.width - cornerRadius, p5.height - cornerRadius, cornerRadius, cornerRadius);
+    
+    // 左下角の当たり判定（ウインク用） - 画面固定
+    p5.fill(255, 0, 255, 100); // 半透明のマゼンタ
+    p5.stroke(255, 0, 255, 200); // マゼンタの枠線
+    p5.rect(0, p5.height - cornerRadius, cornerRadius, cornerRadius);
+    
+    // 右上角の当たり判定（泣く表情用） - 画面固定
+    p5.fill(255, 255, 0, 100); // 半透明の黄色
+    p5.stroke(255, 255, 0, 200); // 黄色の枠線
+    p5.rect(p5.width - cornerRadius, 0, cornerRadius, cornerRadius);
     
     p5.pop();
     
     // 説明テキストを表示
     p5.push();
-    p5.fill(255, 255, 0); // 黄色のテキスト
+    p5.fill(255, 255, 255); // 白いテキスト（黄色の四角と区別）
     p5.textSize(16 * scaleFactorRef.current);
     p5.textAlign(p5.CENTER, p5.TOP);
-    p5.text('赤い円: 目の当たり判定（表情変更）', p5.width / 2, 20 * scaleFactorRef.current);
-    p5.text('赤い円以外: 瞳孔移動（タップ）/ 笑顔・ウインク（撫で）', p5.width / 2, 45 * scaleFactorRef.current);
-    p5.text('Hキー: 当たり判定表示切り替え', p5.width / 2, 70 * scaleFactorRef.current);
+    p5.text('赤い円: 目の当たり判定（hurt表情）', p5.width / 2, 20 * scaleFactorRef.current);
+    p5.text('緑い円: 鼻の当たり判定（驚き表情）', p5.width / 2, 45 * scaleFactorRef.current);
+    p5.text('青い四角: 右下角（口の表情）', p5.width / 2, 70 * scaleFactorRef.current);
+    p5.text('マゼンタ四角: 左下角（ウインク）', p5.width / 2, 95 * scaleFactorRef.current);
+    p5.text('黄色四角: 右上角（泣く表情）', p5.width / 2, 120 * scaleFactorRef.current);
+    p5.text('その他: 瞳孔移動（タップ）/ 笑顔・ウインク（撫で）', p5.width / 2, 145 * scaleFactorRef.current);
+    p5.text('Hキー: 当たり判定表示切り替え', p5.width / 2, 170 * scaleFactorRef.current);
     p5.pop();
   };
 
