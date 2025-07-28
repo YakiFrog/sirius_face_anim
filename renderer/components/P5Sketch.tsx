@@ -100,7 +100,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const preHurtExpressionRef = useRef<FacialExpression>('neutral');
   
   // 当たり判定の可視化用状態
-  const [showHitBoxes, setShowHitBoxes] = useState(true); // デバッグ用：最初は表示
+  const [showHitBoxes, setShowHitBoxes] = useState(false); // デフォルトは非表示
   const showHitBoxesRef = useRef(true); // refでも管理して即座にアクセス
   
   // 撫で時間表示の可視化用状態
