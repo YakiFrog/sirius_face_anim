@@ -1261,7 +1261,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       
       // 画面の四隅の当たり判定（角から一定範囲内）
       // 注意: 呼吸による頭の動きに影響されない画面固定座標を使用
-      const cornerRadius = 100; // 四隅の当たり判定範囲
+      const cornerRadius = 200; // 四隅の当たり判定範囲（150から200に拡大）
       
       // 右下角の判定（画面固定座標）
       const isBottomRight = (x > dimensions.width - cornerRadius) && (y > dimensions.height - cornerRadius);
@@ -2826,7 +2826,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 注意: 呼吸による頭の動きに影響されない画面固定座標を使用
     // 独立したコンテキストで描画して、変形の影響を完全に排除
     p5.push();
-    const cornerRadius = 100;
+    const cornerRadius = 200; // 四隅の当たり判定範囲（150から200に拡大）
     
     // 右下角の当たり判定（口の表情用） - 画面固定
     p5.fill(0, 0, 255, 100); // 半透明の青
