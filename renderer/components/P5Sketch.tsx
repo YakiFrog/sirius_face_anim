@@ -853,11 +853,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       touchEvent = event;
     }
     
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    // 座標変換を実行
+    const coordinates = convertEventCoordinates(touchEvent);
+    if (!coordinates) return;
     
-    const x = touchEvent.clientX - rect.left;
-    const y = touchEvent.clientY - rect.top;
+    const { x, y } = coordinates;
     
     dragStartRef.current = { x, y, time: Date.now() };
     dragCurrentRef.current = { x, y };
@@ -881,11 +881,11 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       touchEvent = event;
     }
     
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    // 座標変換を実行
+    const coordinates = convertEventCoordinates(touchEvent);
+    if (!coordinates) return;
     
-    const x = touchEvent.clientX - rect.left;
-    const y = touchEvent.clientY - rect.top;
+    const { x, y } = coordinates;
     
     dragCurrentRef.current = { x, y };
     
@@ -1066,6 +1066,36 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     return distanceToLeftEye <= radius || distanceToRightEye <= radius;
   };
 
+  // 座標変換ヘルパー関数
+  const convertEventCoordinates = (touchEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    
+    if (fullScreen) {
+      // フルスクリーンモードでは、キャンバスが画面中央に配置されている
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+      const canvasWidth = dimensions.width;
+      const canvasHeight = dimensions.height;
+      
+      // キャンバスが画面の中央に配置されている場合のオフセット
+      const offsetX = (screenWidth - canvasWidth) / 2;
+      const offsetY = (screenHeight - canvasHeight) / 2;
+      
+      // 実際のタップ座標からキャンバスの原点を基準とした座標に変換
+      return {
+        x: touchEvent.clientX - offsetX,
+        y: touchEvent.clientY - offsetY
+      };
+    } else {
+      // 通常モードでは従来通りの計算
+      return {
+        x: touchEvent.clientX - rect.left,
+        y: touchEvent.clientY - rect.top
+      };
+    }
+  };
+
   // タップ（クリック）イベントのハンドラ
   const handleTap = (event) => {
     // ドラッグ中の場合はタップ処理をスキップ
@@ -1094,12 +1124,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     console.log('イベントタイプ:', eventType, 'event.type:', event.type);
     
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    // 座標変換を実行
+    const coordinates = convertEventCoordinates(touchEvent);
+    if (!coordinates) return;
     
-    // Canvas内での相対座標を計算
-    const x = touchEvent.clientX - rect.left;
-    const y = touchEvent.clientY - rect.top;
+    const { x, y } = coordinates;
+    
+    console.log('変換後座標:', { x, y });
     
     tapPositionRef.current = { x, y };
     
