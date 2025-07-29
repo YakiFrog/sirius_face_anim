@@ -844,7 +844,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // ドラッグ開始を検出するハンドラ
   const handleDragStart = (event) => {
-    const touchEvent = event.touches ? event.touches[0] : event;
+    let touchEvent;
+    if (event.touches && event.touches.length > 0) {
+      // touchstart イベントの場合
+      touchEvent = event.touches[0];
+    } else {
+      // マウスイベントの場合
+      touchEvent = event;
+    }
+    
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     
@@ -864,7 +872,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const handleDragMove = (event) => {
     if (!dragStartRef.current) return;
     
-    const touchEvent = event.touches ? event.touches[0] : event;
+    let touchEvent;
+    if (event.touches && event.touches.length > 0) {
+      // touchmove イベントの場合
+      touchEvent = event.touches[0];
+    } else {
+      // マウスイベントの場合
+      touchEvent = event;
+    }
+    
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     
@@ -1019,7 +1035,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         y: dimensions.height / 2 - eyeYOffset + headMovement.y 
       }
     };
-    const eyeHitRadius = eyeSize * 0.3;
+    const eyeHitRadius = eyeSize * 0.5; // 0.3から0.5に拡大してタップしやすくする
     
     console.log('目の位置チェック:');
     console.log('  左目:', eyePositions.left);
@@ -1059,7 +1075,25 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }
     
     // タップ位置を記録（タッチイベントとクリックイベントの両方に対応）
-    const touchEvent = event.touches ? event.touches[0] : event;
+    let touchEvent;
+    let eventType = '';
+    
+    if (event.touches && event.touches.length > 0) {
+      // touchstart, touchmove イベントの場合
+      touchEvent = event.touches[0];
+      eventType = 'touches';
+    } else if (event.changedTouches && event.changedTouches.length > 0) {
+      // touchend イベントの場合
+      touchEvent = event.changedTouches[0];
+      eventType = 'changedTouches';
+    } else {
+      // マウスイベントの場合
+      touchEvent = event;
+      eventType = 'mouse';
+    }
+    
+    console.log('イベントタイプ:', eventType, 'event.type:', event.type);
+    
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     
@@ -1096,7 +1130,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         y: dimensions.height / 2 - eyeYOffset + headMovement.y 
       }
     };
-    eyeHitRadius = eyeSize * 0.3;
+    eyeHitRadius = eyeSize * 0.5; // 0.3から0.5に拡大してタップしやすくする
     
     // タップが目の範囲内かどうかをチェック
     const distanceToLeftEye = Math.sqrt(
@@ -2712,7 +2746,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // p5から実際の目の位置を取得（描画関数で設定されたもの）
     let eyePositions = p5.actualEyePositions;
-    let eyeHitRadius = params.eyeSize * 0.3;
+    let eyeHitRadius = params.eyeSize * 0.5; // 0.3から0.5に拡大してタップしやすくする
     
     if (eyePositions) {
       eyeHitRadius = eyePositions.hitRadius;
