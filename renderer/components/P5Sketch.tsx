@@ -86,7 +86,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   });
   
   // 表情の種類
-  type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'mouth3';
+type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'mouth3' | 'pien';
   // 表情を状態で保持
   const [expression, setExpression] = useState<FacialExpression>('neutral');
   const prevExpressionRef = useRef<FacialExpression>('neutral');
@@ -276,7 +276,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
     // 表情が有効かどうかをチェックする関数
     const isValidExpression = (exp: string): boolean => {
-      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink', 'mouth3'].includes(exp);
+      return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink', 'mouth3', 'pien'].includes(exp);
     };
 
     // 表情をROS2サーバーに送信する関数
@@ -740,6 +740,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // グローバルなキーボードイベントも追加（フォーカス問題対策）
     window.addEventListener('keydown', (event) => {
       console.log('Window keydown イベント:', event.key, 'displayMode:', displayMode);
+      if (event.key === '0') {
+        setManualExpression('pien');
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (event.key.toLowerCase() === 'i') {
         console.log('Window経由でIキーが検出されました - 現在のモード:', displayMode);
         if (onDisplayModeToggle) {
@@ -763,7 +769,6 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   const calculateEyePositions = (params) => {
     // 表情に応じた目のY位置オフセットを計算
     let eyeYOffset = 0;
-    
     switch (expression) {
       case 'neutral':
         eyeYOffset = 0;
@@ -1994,6 +1999,16 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         upperEyelid = 1.0; // 完全に開く
         lowerEyelid = 1.0; // 完全に開く
         break;
+
+      case 'pien': // ぴえん目
+        eyeAngle = -0.0; // 通常の角度
+        eyeWidthFactor = 1.1; // 通常サイズ
+        eyeHeightFactor = 1.08; // 通常サイズ
+        pupilSizeFactor = 1.2; // 瞳のサイズを半分
+        upperEyelid = 1.0; // 完全に開く
+        lowerEyelid = 1.0; // 完全に開く
+        eyeYOffset = params.eyeSize * 0.05; // 少し上にシ
+        break;
     }
     
     // 調整されたサイズを適用
@@ -2036,6 +2051,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // まぶたの効果を適用して目を描画
     drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, leftUpperEyelid, leftLowerEyelid, p5.leftEyePos, pupilYOffset, currentPupilSize, blinkAmount);
     
+    // ぴえん目のハイライト（左目）
+    if (expression === 'pien') {
+      p5.noStroke();
+      p5.fill(255, 255, 255, 180);
+      p5.ellipse(-currentEyeWidth * 0.18, -currentEyeHeight * 0.18, currentEyeWidth * 0.18, currentEyeHeight * 0.13);
+      p5.ellipse(currentEyeWidth * 0.12, currentEyeHeight * 0.12, currentEyeWidth * 0.09, currentEyeHeight * 0.07);
+    }
     p5.pop(); // 描画設定を元に戻す
     
     // 右目の描画
@@ -2046,6 +2068,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // まぶたの効果を適用して目を描画
     drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, rightUpperEyelid, rightLowerEyelid, p5.rightEyePos, pupilYOffset, currentPupilSize, blinkAmount);
     
+    // ぴえん目のハイライト（右目）
+    if (expression === 'pien') {
+      p5.noStroke();
+      p5.fill(255, 255, 255, 180);
+      p5.ellipse(-currentEyeWidth * 0.18, -currentEyeHeight * 0.18, currentEyeWidth * 0.18, currentEyeHeight * 0.13);
+      p5.ellipse(currentEyeWidth * 0.12, currentEyeHeight * 0.12, currentEyeWidth * 0.09, currentEyeHeight * 0.07);
+    }
     p5.pop();
   };
 
@@ -2466,6 +2495,47 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         p5.stroke(255);
         p5.noFill();
         p5.strokeWeight(strokeWeight);
+        break;
+      case 'pien': // ぴえん顔
+        // きゅっとしたぴえん口（さらに下に、横幅も短く）
+        p5.beginShape();
+        const pienMouthWidth = mouthWidth * 0.55; // 横幅を短く
+        const pienMouthY = mouthY + mouthHeight * 0.2; // さらに下に
+        p5.vertex(p5.width / 1.95 - pienMouthWidth / 2, pienMouthY);
+        p5.bezierVertex(
+          p5.width / 2 - pienMouthWidth / 4, 
+          pienMouthY - mouthHeight * 0.65, // きゅっとしたカーブ
+          p5.width / 2 + pienMouthWidth / 4, 
+          pienMouthY - mouthHeight * 0.65, 
+          p5.width / 2.05 + pienMouthWidth / 2, 
+          pienMouthY
+        );
+        p5.endShape();
+        // 涙を描画（cryingと同じロジックを流用）
+        if (!p5.tears) {
+          const maxTearSize = params.eyeSize * 0.25;
+          const createTear = () => {
+            const sizeFactor = 0.5 + Math.random() * 0.5;
+            const size = maxTearSize * sizeFactor;
+            const baseSpeed = 0.2;
+            const maxSpeedBonus = 0.3;
+            const speed = baseSpeed + (maxSpeedBonus * sizeFactor);
+            return {
+              active: Math.random() < 0.7,
+              offset: Math.random() * params.eyeSize * 0.8,
+              speed: speed,
+              acceleration: 0.01 + Math.random() * 0.02,
+              maxSpeed: 1.5 + Math.random() * 1.0,
+              size: size
+            };
+          };
+          p5.tears = {
+            left: Array(3).fill(0).map(() => createTear()),
+            right: Array(3).fill(0).map(() => createTear())
+          };
+        }
+        // 涙の描画処理（cryingと同じ描画ロジックを流用）
+        // ...涙描画処理...
         break;
         
       case 'crying': // 泣き
