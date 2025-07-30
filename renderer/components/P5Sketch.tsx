@@ -2086,8 +2086,8 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
       const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosLeft.y + currentEyeHeight * 0.16));
       p5.noStroke();
       p5.fill(255, 255, 255, 255);
-      p5.ellipse(cx1, cy1, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
-      p5.ellipse(cx2, cy2, currentEyeWidth * 0.16, currentEyeHeight * 0.12);
+      p5.ellipse(cx1, cy1, currentEyeWidth * 0.45, currentEyeHeight * 0.36); // ハイライトを大きく
+      p5.ellipse(cx2, cy2, currentEyeWidth * 0.28, currentEyeHeight * 0.22); // ハイライトを大きく
     }
     p5.pop(); // 描画設定を元に戻す
     
@@ -2126,8 +2126,8 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
       const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosRight.y + currentEyeHeight * 0.16));
       p5.noStroke();
       p5.fill(255, 255, 255, 255);
-      p5.ellipse(cx1, cy1, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
-      p5.ellipse(cx2, cy2, currentEyeWidth * 0.16, currentEyeHeight * 0.12);
+      p5.ellipse(cx1, cy1, currentEyeWidth * 0.45, currentEyeHeight * 0.36); // ハイライトを大きく
+      p5.ellipse(cx2, cy2, currentEyeWidth * 0.28, currentEyeHeight * 0.22); // ハイライトを大きく
     }
     p5.pop();
   };
