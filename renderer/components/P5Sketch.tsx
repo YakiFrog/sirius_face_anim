@@ -1900,6 +1900,14 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
   
   // 両目を描画する関数
   const drawEyes = (p5, params) => {
+    // ハイライト遅延追従用のグローバル座標（初期化）
+    if (!p5.highlightPosLeft) {
+      p5.highlightPosLeft = { x: 0, y: 0 };
+    }
+    if (!p5.highlightPosRight) {
+      p5.highlightPosRight = { x: 0, y: 0 };
+    }
+    const highlightEasing = 0.10;
     // サイズ係数を適用して目を描画
     let currentEyeWidth = params.eyeSize;
     let currentEyeHeight = params.eyeSize * p5.eyeVerticalFactor;
@@ -2053,10 +2061,33 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
     
     // ぴえん目のハイライト（左目）
     if (expression === 'pien') {
+      // 瞳孔座標
+      const px = p5.leftEyePos.x;
+      const py = p5.leftEyePos.y + pupilYOffset + (() => {
+        const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - leftUpperEyelid);
+        const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - leftLowerEyelid);
+        return (upperLidY + lowerLidY) / 2 * 0.4;
+      })();
+      // イージングで遅延追従
+      p5.highlightPosLeft.x += (px - p5.highlightPosLeft.x) * highlightEasing;
+      p5.highlightPosLeft.y += (py - p5.highlightPosLeft.y) * highlightEasing;
+      // 白目半径−ハイライト半径でクリップ
+      const whiteRadiusX = currentEyeWidth * 0.43;
+      const whiteRadiusY = currentEyeHeight * 0.43;
+      const hlRadiusX1 = currentEyeWidth * 0.28 * 0.5;
+      const hlRadiusY1 = currentEyeHeight * 0.22 * 0.5;
+      const hlRadiusX2 = currentEyeWidth * 0.16 * 0.5;
+      const hlRadiusY2 = currentEyeHeight * 0.12 * 0.5;
+      // 1つ目のハイライト
+      const cx1 = Math.max(-whiteRadiusX + hlRadiusX1, Math.min(whiteRadiusX - hlRadiusX1, p5.highlightPosLeft.x - currentEyeWidth * 0.22));
+      const cy1 = Math.max(-whiteRadiusY + hlRadiusY1, Math.min(whiteRadiusY - hlRadiusY1, p5.highlightPosLeft.y - currentEyeHeight * 0.22));
+      // 2つ目のハイライト
+      const cx2 = Math.max(-whiteRadiusX + hlRadiusX2, Math.min(whiteRadiusX - hlRadiusX2, p5.highlightPosLeft.x + currentEyeWidth * 0.16));
+      const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosLeft.y + currentEyeHeight * 0.16));
       p5.noStroke();
-      p5.fill(255, 255, 255, 180);
-      p5.ellipse(-currentEyeWidth * 0.18, -currentEyeHeight * 0.18, currentEyeWidth * 0.18, currentEyeHeight * 0.13);
-      p5.ellipse(currentEyeWidth * 0.12, currentEyeHeight * 0.12, currentEyeWidth * 0.09, currentEyeHeight * 0.07);
+      p5.fill(255, 255, 255, 255);
+      p5.ellipse(cx1, cy1, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
+      p5.ellipse(cx2, cy2, currentEyeWidth * 0.16, currentEyeHeight * 0.12);
     }
     p5.pop(); // 描画設定を元に戻す
     
@@ -2070,10 +2101,33 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
     
     // ぴえん目のハイライト（右目）
     if (expression === 'pien') {
+      // 瞳孔座標
+      const px = p5.rightEyePos.x;
+      const py = p5.rightEyePos.y + pupilYOffset + (() => {
+        const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - rightUpperEyelid);
+        const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - rightLowerEyelid);
+        return (upperLidY + lowerLidY) / 2 * 0.4;
+      })();
+      // イージングで遅延追従
+      p5.highlightPosRight.x += (px - p5.highlightPosRight.x) * highlightEasing;
+      p5.highlightPosRight.y += (py - p5.highlightPosRight.y) * highlightEasing;
+      // 白目半径−ハイライト半径でクリップ
+      const whiteRadiusX = currentEyeWidth * 0.43;
+      const whiteRadiusY = currentEyeHeight * 0.43;
+      const hlRadiusX1 = currentEyeWidth * 0.28 * 0.5;
+      const hlRadiusY1 = currentEyeHeight * 0.22 * 0.5;
+      const hlRadiusX2 = currentEyeWidth * 0.16 * 0.5;
+      const hlRadiusY2 = currentEyeHeight * 0.12 * 0.5;
+      // 1つ目のハイライト
+      const cx1 = Math.max(-whiteRadiusX + hlRadiusX1, Math.min(whiteRadiusX - hlRadiusX1, p5.highlightPosRight.x - currentEyeWidth * 0.22));
+      const cy1 = Math.max(-whiteRadiusY + hlRadiusY1, Math.min(whiteRadiusY - hlRadiusY1, p5.highlightPosRight.y - currentEyeHeight * 0.22));
+      // 2つ目のハイライト
+      const cx2 = Math.max(-whiteRadiusX + hlRadiusX2, Math.min(whiteRadiusX - hlRadiusX2, p5.highlightPosRight.x + currentEyeWidth * 0.16));
+      const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosRight.y + currentEyeHeight * 0.16));
       p5.noStroke();
-      p5.fill(255, 255, 255, 180);
-      p5.ellipse(-currentEyeWidth * 0.18, -currentEyeHeight * 0.18, currentEyeWidth * 0.18, currentEyeHeight * 0.13);
-      p5.ellipse(currentEyeWidth * 0.12, currentEyeHeight * 0.12, currentEyeWidth * 0.09, currentEyeHeight * 0.07);
+      p5.fill(255, 255, 255, 255);
+      p5.ellipse(cx1, cy1, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
+      p5.ellipse(cx2, cy2, currentEyeWidth * 0.16, currentEyeHeight * 0.12);
     }
     p5.pop();
   };
