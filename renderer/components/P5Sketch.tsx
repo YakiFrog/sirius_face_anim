@@ -2055,79 +2055,86 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
     p5.push(); // 現在の描画設定を保存
     p5.translate(leftEyeX, leftEyeY);
     p5.rotate(eyeAngle);
-    
+
     // まぶたの効果を適用して目を描画
     drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, leftUpperEyelid, leftLowerEyelid, p5.leftEyePos, pupilYOffset, currentPupilSize, blinkAmount);
-    
+
     // ぴえん目のハイライト（左目）
     if (expression === 'pien') {
-      // 瞳孔座標
-      const px = p5.leftEyePos.x;
-      const py = p5.leftEyePos.y + pupilYOffset + (() => {
+      // --- マスク処理開始 ---
+      // 1. 白目楕円マスク用p5.Graphics作成
+      const maskG = p5.createGraphics(currentEyeWidth, currentEyeHeight);
+      maskG.clear();
+      maskG.fill(255);
+      maskG.noStroke();
+      maskG.ellipse(currentEyeWidth/2, currentEyeHeight/2, currentEyeWidth * 0.87, currentEyeHeight * 0.87);
+      // 2. ハイライト描画用p5.Graphics作成
+      const hlG = p5.createGraphics(currentEyeWidth, currentEyeHeight);
+      hlG.clear();
+      hlG.noStroke();
+      hlG.fill(255,255,255,255);
+      const px = p5.leftEyePos.x + currentEyeWidth/2;
+      const py = p5.leftEyePos.y + pupilYOffset + currentEyeHeight/2 + (() => {
         const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - leftUpperEyelid);
         const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - leftLowerEyelid);
         return (upperLidY + lowerLidY) / 2 * 0.4;
       })();
-      // イージングで遅延追従
-      p5.highlightPosLeft.x += (px - p5.highlightPosLeft.x) * highlightEasing;
-      p5.highlightPosLeft.y += (py - p5.highlightPosLeft.y) * highlightEasing;
-      // 白目半径−ハイライト半径でクリップ
-      const whiteRadiusX = currentEyeWidth * 0.43;
-      const whiteRadiusY = currentEyeHeight * 0.43;
-      const hlRadiusX1 = currentEyeWidth * 0.28 * 0.5;
-      const hlRadiusY1 = currentEyeHeight * 0.22 * 0.5;
-      const hlRadiusX2 = currentEyeWidth * 0.16 * 0.5;
-      const hlRadiusY2 = currentEyeHeight * 0.12 * 0.5;
-      // 1つ目のハイライト
-      const cx1 = Math.max(-whiteRadiusX + hlRadiusX1, Math.min(whiteRadiusX - hlRadiusX1, p5.highlightPosLeft.x - currentEyeWidth * 0.22));
-      const cy1 = Math.max(-whiteRadiusY + hlRadiusY1, Math.min(whiteRadiusY - hlRadiusY1, p5.highlightPosLeft.y - currentEyeHeight * 0.22));
-      // 2つ目のハイライト
-      const cx2 = Math.max(-whiteRadiusX + hlRadiusX2, Math.min(whiteRadiusX - hlRadiusX2, p5.highlightPosLeft.x + currentEyeWidth * 0.16));
-      const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosLeft.y + currentEyeHeight * 0.16));
-      p5.noStroke();
-      p5.fill(255, 255, 255, 255);
-      p5.ellipse(cx1, cy1, currentEyeWidth * 0.45, currentEyeHeight * 0.36); // ハイライトを大きく
-      p5.ellipse(cx2, cy2, currentEyeWidth * 0.28, currentEyeHeight * 0.22); // ハイライトを大きく
+      hlG.ellipse(px - currentEyeWidth * 0.22, py - currentEyeHeight * 0.22, currentEyeWidth * 0.45, currentEyeHeight * 0.36);
+      hlG.ellipse(px + currentEyeWidth * 0.16, py + currentEyeHeight * 0.16, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
+      // 3. ピクセル単位でマスク処理
+      hlG.loadPixels();
+      maskG.loadPixels();
+      for (let i = 0; i < hlG.pixels.length; i += 4) {
+        // maskGのアルファ値が0ならhlGも透明に
+        if (maskG.pixels[i] === 0) {
+          hlG.pixels[i + 3] = 0;
+        }
+      }
+      hlG.updatePixels();
+      // 4. 合成
+      p5.image(hlG, -currentEyeWidth/2, -currentEyeHeight/2);
+      // --- マスク処理終了 ---
     }
     p5.pop(); // 描画設定を元に戻す
-    
+
     // 右目の描画
     p5.push();
     p5.translate(rightEyeX, rightEyeY);
     p5.rotate(-eyeAngle); // 左右対称になるよう符号を反転
-    
+
     // まぶたの効果を適用して目を描画
     drawEyeWithLids(p5, currentEyeWidth, currentEyeHeight, rightUpperEyelid, rightLowerEyelid, p5.rightEyePos, pupilYOffset, currentPupilSize, blinkAmount);
-    
+
     // ぴえん目のハイライト（右目）
     if (expression === 'pien') {
-      // 瞳孔座標
-      const px = p5.rightEyePos.x;
-      const py = p5.rightEyePos.y + pupilYOffset + (() => {
+      // --- マスク処理開始 ---
+      const maskG = p5.createGraphics(currentEyeWidth, currentEyeHeight);
+      maskG.clear();
+      maskG.fill(255);
+      maskG.noStroke();
+      maskG.ellipse(currentEyeWidth/2, currentEyeHeight/2, currentEyeWidth * 0.87, currentEyeHeight * 0.87);
+      const hlG = p5.createGraphics(currentEyeWidth, currentEyeHeight);
+      hlG.clear();
+      hlG.noStroke();
+      hlG.fill(255,255,255,255);
+      const px = p5.rightEyePos.x + currentEyeWidth/2;
+      const py = p5.rightEyePos.y + pupilYOffset + currentEyeHeight/2 + (() => {
         const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - rightUpperEyelid);
         const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - rightLowerEyelid);
         return (upperLidY + lowerLidY) / 2 * 0.4;
       })();
-      // イージングで遅延追従
-      p5.highlightPosRight.x += (px - p5.highlightPosRight.x) * highlightEasing;
-      p5.highlightPosRight.y += (py - p5.highlightPosRight.y) * highlightEasing;
-      // 白目半径−ハイライト半径でクリップ
-      const whiteRadiusX = currentEyeWidth * 0.43;
-      const whiteRadiusY = currentEyeHeight * 0.43;
-      const hlRadiusX1 = currentEyeWidth * 0.28 * 0.5;
-      const hlRadiusY1 = currentEyeHeight * 0.22 * 0.5;
-      const hlRadiusX2 = currentEyeWidth * 0.16 * 0.5;
-      const hlRadiusY2 = currentEyeHeight * 0.12 * 0.5;
-      // 1つ目のハイライト
-      const cx1 = Math.max(-whiteRadiusX + hlRadiusX1, Math.min(whiteRadiusX - hlRadiusX1, p5.highlightPosRight.x - currentEyeWidth * 0.22));
-      const cy1 = Math.max(-whiteRadiusY + hlRadiusY1, Math.min(whiteRadiusY - hlRadiusY1, p5.highlightPosRight.y - currentEyeHeight * 0.22));
-      // 2つ目のハイライト
-      const cx2 = Math.max(-whiteRadiusX + hlRadiusX2, Math.min(whiteRadiusX - hlRadiusX2, p5.highlightPosRight.x + currentEyeWidth * 0.16));
-      const cy2 = Math.max(-whiteRadiusY + hlRadiusY2, Math.min(whiteRadiusY - hlRadiusY2, p5.highlightPosRight.y + currentEyeHeight * 0.16));
-      p5.noStroke();
-      p5.fill(255, 255, 255, 255);
-      p5.ellipse(cx1, cy1, currentEyeWidth * 0.45, currentEyeHeight * 0.36); // ハイライトを大きく
-      p5.ellipse(cx2, cy2, currentEyeWidth * 0.28, currentEyeHeight * 0.22); // ハイライトを大きく
+      hlG.ellipse(px - currentEyeWidth * 0.22, py - currentEyeHeight * 0.22, currentEyeWidth * 0.45, currentEyeHeight * 0.36);
+      hlG.ellipse(px + currentEyeWidth * 0.16, py + currentEyeHeight * 0.16, currentEyeWidth * 0.28, currentEyeHeight * 0.22);
+      hlG.loadPixels();
+      maskG.loadPixels();
+      for (let i = 0; i < hlG.pixels.length; i += 4) {
+        if (maskG.pixels[i] === 0) {
+          hlG.pixels[i + 3] = 0;
+        }
+      }
+      hlG.updatePixels();
+      p5.image(hlG, -currentEyeWidth/2, -currentEyeHeight/2);
+      // --- マスク処理終了 ---
     }
     p5.pop();
   };
@@ -2567,29 +2574,42 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
         p5.endShape();
         // 涙を描画（cryingと同じロジックを流用）
         if (!p5.tears) {
-          const maxTearSize = params.eyeSize * 0.25;
-          const createTear = () => {
-            const sizeFactor = 0.5 + Math.random() * 0.5;
-            const size = maxTearSize * sizeFactor;
-            const baseSpeed = 0.2;
-            const maxSpeedBonus = 0.3;
-            const speed = baseSpeed + (maxSpeedBonus * sizeFactor);
-            return {
-              active: Math.random() < 0.7,
-              offset: Math.random() * params.eyeSize * 0.8,
-              speed: speed,
-              acceleration: 0.01 + Math.random() * 0.02,
-              maxSpeed: 1.5 + Math.random() * 1.0,
-              size: size
-            };
-          };
           p5.tears = {
-            left: Array(3).fill(0).map(() => createTear()),
-            right: Array(3).fill(0).map(() => createTear())
+            left: [],
+            right: []
           };
+          
+          for (let i = 0; i < 3; i++) {
+            p5.tears.left.push({
+              x: p5.width / 2 - params.eyeSpacing - params.eyeSize * 0.3 + Math.random() * params.eyeSize * 0.6,
+              y: p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + Math.random() * params.eyeSize * 0.3,
+              size: params.eyeSize * 0.1 + Math.random() * params.eyeSize * 0.1,
+              speed: 2 + Math.random() * 2
+            });
+            
+            p5.tears.right.push({
+              x: p5.width / 2 + params.eyeSpacing + params.eyeSize * 0.3 + Math.random() * params.eyeSize * 0.6,
+              y: p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + Math.random() * params.eyeSize * 0.3,
+              size: params.eyeSize * 0.1 + Math.random() * params.eyeSize * 0.1,
+              speed: 2 + Math.random() * 2
+            });
+          }
         }
+        
         // 涙の描画処理（cryingと同じ描画ロジックを流用）
-        // ...涙描画処理...
+        // 左側の涙を描画
+        p5.tears.left.forEach((tear) => {
+          p5.fill(255);
+          p5.noStroke();
+          p5.ellipse(tear.x, tear.y, tear.size, tear.size * 1.5);
+        });
+        
+        // 右側の涙を描画
+        p5.tears.right.forEach((tear) => {
+          p5.fill(255);
+          p5.noStroke();
+          p5.ellipse(tear.x, tear.y, tear.size, tear.size * 1.5);
+        });
         break;
         
       case 'crying': // 泣き
@@ -2971,7 +2991,7 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
     
     // 説明テキストを表示
     p5.push();
-    p5.fill(255, 255, 255); // 白いテキスト（黄色の四角と区別）
+    p5.fill(255,  255, 255); // 白いテキスト（黄色の四角と区別）
     p5.textSize(16 * scaleFactorRef.current);
     p5.textAlign(p5.CENTER, p5.TOP);
     p5.text('赤い円: 目の当たり判定（hurt表情）', p5.width / 2, 20 * scaleFactorRef.current);
