@@ -1913,6 +1913,13 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
     p5.highlightPosLeft.y += (p5.leftEyePos.y - p5.highlightPosLeft.y) * highlightEasing;
     p5.highlightPosRight.x += (p5.rightEyePos.x - p5.highlightPosRight.x) * highlightEasing;
     p5.highlightPosRight.y += (p5.rightEyePos.y - p5.highlightPosRight.y) * highlightEasing;
+    // --- きゅるきゅる微振動追加 ---
+    const vibrateAmp = params.eyeSize * 0.0015; // 振幅: 目サイズの2%
+    const vibrateFreq = 0.3; // 周波数
+    p5.highlightPosLeft.x += Math.sin(p5.frameCount * vibrateFreq) * vibrateAmp;
+    p5.highlightPosLeft.y += Math.cos(p5.frameCount * vibrateFreq * 1.2) * vibrateAmp;
+    p5.highlightPosRight.x += Math.sin((p5.frameCount + 100) * vibrateFreq) * vibrateAmp;
+    p5.highlightPosRight.y += Math.cos((p5.frameCount + 100) * vibrateFreq * 1.2) * vibrateAmp;
 
     // サイズ係数を適用して目を描画
     let currentEyeWidth = params.eyeSize;
@@ -2606,7 +2613,7 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
           const createTear = () => {
             // 0.5から1.0の範囲でランダムなサイズ係数を生成
             const sizeFactor = 0.5 + Math.random() * 0.5;
-            // サイズに比例した速度（大きい涙ほど速く落ちる）
+            // サイズに比例した速度（大きい涙ほど速く）
             const size = maxTearSize * sizeFactor;
             const baseSpeed = 0.2;
             const maxSpeedBonus = 0.3;
