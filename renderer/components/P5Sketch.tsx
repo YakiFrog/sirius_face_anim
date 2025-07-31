@@ -2572,44 +2572,6 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
           pienMouthY
         );
         p5.endShape();
-        // 涙を描画（cryingと同じロジックを流用）
-        if (!p5.tears) {
-          p5.tears = {
-            left: [],
-            right: []
-          };
-          
-          for (let i = 0; i < 3; i++) {
-            p5.tears.left.push({
-              x: p5.width / 2 - params.eyeSpacing - params.eyeSize * 0.3 + Math.random() * params.eyeSize * 0.6,
-              y: p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + Math.random() * params.eyeSize * 0.3,
-              size: params.eyeSize * 0.1 + Math.random() * params.eyeSize * 0.1,
-              speed: 2 + Math.random() * 2
-            });
-            
-            p5.tears.right.push({
-              x: p5.width / 2 + params.eyeSpacing + params.eyeSize * 0.3 + Math.random() * params.eyeSize * 0.6,
-              y: p5.height / 2 - params.eyeYOffset + params.eyeSize * 0.7 + Math.random() * params.eyeSize * 0.3,
-              size: params.eyeSize * 0.1 + Math.random() * params.eyeSize * 0.1,
-              speed: 2 + Math.random() * 2
-            });
-          }
-        }
-        
-        // 涙の描画処理（cryingと同じ描画ロジックを流用）
-        // 左側の涙を描画
-        p5.tears.left.forEach((tear) => {
-          p5.fill(255);
-          p5.noStroke();
-          p5.ellipse(tear.x, tear.y, tear.size, tear.size * 1.5);
-        });
-        
-        // 右側の涙を描画
-        p5.tears.right.forEach((tear) => {
-          p5.fill(255);
-          p5.noStroke();
-          p5.ellipse(tear.x, tear.y, tear.size, tear.size * 1.5);
-        });
         break;
         
       case 'crying': // 泣き
