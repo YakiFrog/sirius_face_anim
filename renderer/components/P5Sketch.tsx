@@ -2076,7 +2076,7 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
       const px = p5.leftEyePos.x + currentEyeWidth/2;
       const py = p5.leftEyePos.y + pupilYOffset + currentEyeHeight/2 + (() => {
         const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - leftUpperEyelid);
-        const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - leftLowerEyelid);
+        const lowerLidY = currentEyeHeight/1.2 - currentEyeHeight * (1 - leftLowerEyelid);
         return (upperLidY + lowerLidY) / 2 * 0.4;
       })();
       hlG.ellipse(px - currentEyeWidth * 0.22, py - currentEyeHeight * 0.22, currentEyeWidth * 0.45, currentEyeHeight * 0.36);
@@ -2120,7 +2120,7 @@ type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'c
       const px = p5.rightEyePos.x + currentEyeWidth/2;
       const py = p5.rightEyePos.y + pupilYOffset + currentEyeHeight/2 + (() => {
         const upperLidY = -currentEyeHeight/2 + currentEyeHeight * (1 - rightUpperEyelid);
-        const lowerLidY = currentEyeHeight/2 - currentEyeHeight * (1 - rightLowerEyelid);
+        const lowerLidY = currentEyeHeight/1.2 - currentEyeHeight * (1 - rightLowerEyelid);
         return (upperLidY + lowerLidY) / 2 * 0.4;
       })();
       hlG.ellipse(px - currentEyeWidth * 0.22, py - currentEyeHeight * 0.22, currentEyeWidth * 0.45, currentEyeHeight * 0.36);
