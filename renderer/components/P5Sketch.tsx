@@ -817,56 +817,38 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       return;
     }
     
-    // --- マスク処理開始 ---
-    // 1. 白目楕円マスク用p5.Graphics作成
-    const maskG = p5.createGraphics(eyeWidth, eyeHeight);
-    maskG.clear();
-    maskG.fill(255);
-    maskG.noStroke();
-    maskG.ellipse(eyeWidth/2, eyeHeight/2, eyeWidth * 0.87, eyeHeight * 0.87);
+    // まぶたの影響を計算した中心位置
+    const upperLidY = -eyeHeight/2 + eyeHeight * (1 - upperEyelid);
+    const lowerLidY = eyeHeight/2 - eyeHeight * (1 - lowerEyelid);
+    const eyeCenterShift = (upperLidY + lowerLidY) / 2 * 0.3;
     
-    // 2. ハイライト描画用p5.Graphics作成
-    const hlG = p5.createGraphics(eyeWidth, eyeHeight);
-    hlG.clear();
-    hlG.noStroke();
-    hlG.fill(255, 255, 255, 255);
+    // ハイライト描画位置を計算（制限なし）
+    const px = highlightPos.x;
+    const py = highlightPos.y + pupilYOffset + eyeCenterShift;
     
-    // ハイライト座標を遅延追従させた座標で描画
-    const px = highlightPos.x + eyeWidth/2;
-    const py = highlightPos.y + pupilYOffset + eyeHeight/2 + (() => {
-      const upperLidY = -eyeHeight/2 + eyeHeight * (1 - upperEyelid);
-      const lowerLidY = eyeHeight/1.2 - eyeHeight * (1 - lowerEyelid);
-      return (upperLidY + lowerLidY) / 2 * 0.4;
-    })();
+    // 白目のマスク領域を設定
+    p5.push();
     
-    hlG.ellipse(px - eyeWidth * 0.22, py - eyeHeight * 0.22, eyeWidth * 0.45, eyeHeight * 0.36);
-    hlG.ellipse(px + eyeWidth * 0.16, py + eyeHeight * 0.16, eyeWidth * 0.28, eyeHeight * 0.22);
+    // 1. クリッピングマスクを設定（白目の楕円形状）
+    p5.drawingContext.save();
+    p5.drawingContext.beginPath();
+    p5.drawingContext.ellipse(0, eyeCenterShift, eyeWidth * 0.87 / 2, eyeHeight * 0.87 / 2, 0, 0, Math.PI * 2);
+    p5.drawingContext.clip();
     
-    // 3. ピクセル単位でマスク処理
-    try {
-      hlG.loadPixels();
-      maskG.loadPixels();
-      
-      // ピクセル配列が存在することを確認
-      if (hlG.pixels && maskG.pixels && hlG.pixels.length > 0) {
-        for (let i = 0; i < hlG.pixels.length; i += 4) {
-          // maskGのアルファ値が0ならhlGも透明に
-          if (maskG.pixels[i] === 0) {
-            hlG.pixels[i + 3] = 0;
-          }
-        }
-        hlG.updatePixels();
-      } else {
-        console.warn('Pixel arrays not available for highlight masking');
-      }
-    } catch (error) {
-      console.error('Error in pixel manipulation:', error);
-      // エラーが発生した場合はマスクなしでハイライトを描画
-    }
+    // 2. マスクされた領域内でハイライトを描画
+    p5.fill(255, 255, 255, 255); // 完全不透明の白色
+    p5.noStroke();
     
-    // 4. 合成
-    p5.image(hlG, -eyeWidth/2, -eyeHeight/2);
-    // --- マスク処理終了 ---
+    // メインハイライト（大きめ、左上）
+    p5.ellipse(px - eyeWidth * 0.22, py - eyeHeight * 0.22, eyeWidth * 0.45, eyeHeight * 0.36);
+    
+    // サブハイライト（小さめ、右下）
+    p5.ellipse(px + eyeWidth * 0.16, py + eyeHeight * 0.16, eyeWidth * 0.28, eyeHeight * 0.22);
+    
+    // 3. クリッピングマスクを解除
+    p5.drawingContext.restore();
+    
+    p5.pop();
   };
 
   // 両目を描画する関数
@@ -1433,15 +1415,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'pien':
         p5.beginShape();
-        const pienMouthWidth = mouthWidth * 0.55; // 横幅を短く
-        const pienMouthY = mouthY + mouthHeight * 0.2; // さらに下に
-        p5.vertex(p5.width / 1.95 - pienMouthWidth / 2, pienMouthY);
+        const pienMouthWidth = mouthWidth * 0.55;
+        const pienMouthY = mouthY + mouthHeight * 0.2;
+        // 口の両端の丸みを保つため、正確な中心位置を計算
+        const pienCenterX = p5.width / 2;
+        p5.vertex(pienCenterX - pienMouthWidth / 2, pienMouthY);
         p5.bezierVertex(
-          p5.width / 2 - pienMouthWidth / 4, 
-          pienMouthY - mouthHeight * 0.65, // きゅっとしたカーブ
-          p5.width / 2 + pienMouthWidth / 4, 
+          pienCenterX - pienMouthWidth / 4, 
+          pienMouthY - mouthHeight * 0.65,
+          pienCenterX + pienMouthWidth / 4, 
           pienMouthY - mouthHeight * 0.65, 
-          p5.width / 2.05 + pienMouthWidth / 2, 
+          pienCenterX + pienMouthWidth / 2, 
           pienMouthY
         );
         p5.endShape();
