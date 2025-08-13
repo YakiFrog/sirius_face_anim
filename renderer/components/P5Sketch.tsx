@@ -811,6 +811,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
 
   // ぴえん目のハイライトを描画する関数
   const drawPienHighlight = (p5, eyeWidth, eyeHeight, upperEyelid, lowerEyelid, highlightPos, pupilYOffset) => {
+    // サイズの有効性をチェック
+    if (!eyeWidth || !eyeHeight || eyeWidth <= 0 || eyeHeight <= 0) {
+      console.warn('Invalid eye dimensions for highlight:', { eyeWidth, eyeHeight });
+      return;
+    }
+    
     // --- マスク処理開始 ---
     // 1. 白目楕円マスク用p5.Graphics作成
     const maskG = p5.createGraphics(eyeWidth, eyeHeight);
@@ -837,15 +843,26 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     hlG.ellipse(px + eyeWidth * 0.16, py + eyeHeight * 0.16, eyeWidth * 0.28, eyeHeight * 0.22);
     
     // 3. ピクセル単位でマスク処理
-    hlG.loadPixels();
-    maskG.loadPixels();
-    for (let i = 0; i < hlG.pixels.length; i += 4) {
-      // maskGのアルファ値が0ならhlGも透明に
-      if (maskG.pixels[i] === 0) {
-        hlG.pixels[i + 3] = 0;
+    try {
+      hlG.loadPixels();
+      maskG.loadPixels();
+      
+      // ピクセル配列が存在することを確認
+      if (hlG.pixels && maskG.pixels && hlG.pixels.length > 0) {
+        for (let i = 0; i < hlG.pixels.length; i += 4) {
+          // maskGのアルファ値が0ならhlGも透明に
+          if (maskG.pixels[i] === 0) {
+            hlG.pixels[i + 3] = 0;
+          }
+        }
+        hlG.updatePixels();
+      } else {
+        console.warn('Pixel arrays not available for highlight masking');
       }
+    } catch (error) {
+      console.error('Error in pixel manipulation:', error);
+      // エラーが発生した場合はマスクなしでハイライトを描画
     }
-    hlG.updatePixels();
     
     // 4. 合成
     p5.image(hlG, -eyeWidth/2, -eyeHeight/2);

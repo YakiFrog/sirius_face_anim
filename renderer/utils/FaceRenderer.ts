@@ -19,7 +19,7 @@ export class FaceRenderer {
     const baseEyeYOffset = this.baseHeight / 8;
     
     const eyeSizeFactor = 1.2;
-    const scale = this.scaleFactorRef.current;
+    const scale = Math.max(this.scaleFactorRef.current || 1, 0.1); // 最小値を0.1に設定
     
     return {
       eyeSize: baseEyeSize * scale * eyeSizeFactor,
