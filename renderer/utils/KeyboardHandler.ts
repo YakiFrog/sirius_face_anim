@@ -1,4 +1,5 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
+import { TalkingMode } from './TalkingMode';
 
 export class KeyboardHandler {
   private displayMode: string;
@@ -16,6 +17,7 @@ export class KeyboardHandler {
   private savedMousePositionRef: React.MutableRefObject<{ x: number, y: number } | null>;
   private lastActionTimeRef: React.MutableRefObject<number>;
   private togglePictureInPicture?: () => void;
+  private talkingMode: TalkingMode;
 
   constructor(config: {
     displayMode: string;
@@ -49,6 +51,7 @@ export class KeyboardHandler {
     this.savedMousePositionRef = config.savedMousePositionRef;
     this.lastActionTimeRef = config.lastActionTimeRef;
     this.togglePictureInPicture = config.togglePictureInPicture;
+    this.talkingMode = new TalkingMode();
   }
 
   public handleKeyPress = (p5: any): boolean => {
@@ -66,6 +69,8 @@ export class KeyboardHandler {
       this.handleSaveMousePosition();
     } else if (p5.key === 'w' || p5.key === 'W') {
       this.handleRestoreMousePosition();
+    } else if (p5.key === 's' || p5.key === 'S') {
+      this.handleTalkingModeToggle();
     } else if (p5.key === '0') {
       this.setManualExpression('pien');
     } else if (this.displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
@@ -118,6 +123,15 @@ export class KeyboardHandler {
   private handleRestoreMousePosition() {
     console.log('Wキー: 記録位置に移動');
     this.restoreMousePosition();
+  }
+
+  private handleTalkingModeToggle() {
+    console.log('Sキー: おしゃべりモード切り替え');
+    this.talkingMode.toggle();
+  }
+
+  public getTalkingMode(): TalkingMode {
+    return this.talkingMode;
   }
 
   private handleExpressionChange(key: string) {

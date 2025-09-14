@@ -1238,8 +1238,32 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.noFill();
     p5.strokeWeight(strokeWeight);
 
+    // おしゃべり口の表情別Y座標調整設定
+    const talkingMouthSettings = {
+      // 基本表情での調整値（params.eyeSize に対する倍数）
+      neutral: { mouth_a: 0.0, mouth_i: 0.0, mouth_o: 0.0 },
+      happy: { mouth_a: -0.2, mouth_i: -0.2, mouth_o: -0.2 },
+      angry: { mouth_a: 0.1, mouth_i: 0.1, mouth_o: 0.1 },
+      sad: { mouth_a: -0.03, mouth_i: -0.03, mouth_o: -0.03 },
+      surprised: { mouth_a: -0.02, mouth_i: -0.05, mouth_o: -0.08 },
+      crying: { mouth_a: -0.03, mouth_i: -0.03, mouth_o: -0.03 },
+      hurt: { mouth_a: -0.05, mouth_i: -0.05, mouth_o: -0.05 },
+      wink: { mouth_a: -0.05, mouth_i: -0.08, mouth_o: -0.1 },
+      mouth3: { mouth_a: 0.02, mouth_i: 0.0, mouth_o: -0.02 },
+      pien: { mouth_a: 0.1, mouth_i: 0.1, mouth_o: 0.1 }
+    };
+
+    // おしゃべりモードの場合は特別処理
+    const talkingMode = keyboardHandler.current?.getTalkingMode();
+    let currentExpression = expression;
+    
+    if (talkingMode?.getIsActive()) {
+      const mouthPattern = talkingMode.getCurrentMouthPattern();
+      currentExpression = mouthPattern as any; // 一時的にキャスト
+    }
+
     // 表情による口の位置調整
-    switch (expression) {
+    switch (currentExpression) {
       case 'neutral':
         mouthY -= params.eyeSize * 0.06;
         break;
@@ -1270,10 +1294,19 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'pien':
         mouthY += params.eyeSize * 0.05;  // 元の0.2から0.05に変更して上に移動
         break;
+      case 'mouth_a':
+        mouthY += params.eyeSize * 0.02;
+        break;
+      case 'mouth_i':
+        mouthY += params.eyeSize * 0.02;
+        break;
+      case 'mouth_o':
+        mouthY += params.eyeSize * 0.02;
+        break;
     }
     
     // 表情に応じた口の描画
-    switch (expression) {
+    switch (currentExpression) {
       case 'neutral':
         const naturalMouthWidth = mouthWidth * 0.8;
         p5.beginShape();
@@ -1335,7 +1368,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         p5.endShape();
         
         // 泣きの場合は涙も描画
-        if (expression === 'crying') {
+        if (currentExpression === 'crying') {
           drawTears(p5, params);
         }
         break;
@@ -1457,6 +1490,89 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         }
         
         p5.endShape();
+        break;
+        
+      // おしゃべりモード用の新しい口のパターン
+      case 'mouth_a':
+        // 「あ」の口 - 三日月風（お椀を逆様にした形）
+        const aMouthWidth = mouthWidth * 0.6;
+        const aMouthHeight = mouthHeight * 0.9;
+        // 現在の表情に応じたY座標調整を取得
+        const aMouthYOffset = params.eyeSize * (talkingMouthSettings[expression]?.mouth_a || 0.02);
+
+        const a = 2.5; // 口の横開き具合（でかいほど小さくなる）
+        const b = 0.4; // 口の縦
+        const c = 0.8; // 口の縦
+        
+        // 内側を白で埋める
+        p5.fill(255);
+        p5.noStroke();
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - aMouthWidth / a, mouthY + aMouthYOffset - aMouthHeight * b);
+        p5.bezierVertex(
+          p5.width / 2 - aMouthWidth / 2, 
+          mouthY + aMouthYOffset + aMouthHeight * c,
+          p5.width / 2 + aMouthWidth / 2, 
+          mouthY + aMouthYOffset + aMouthHeight * c,
+          p5.width / 2 + aMouthWidth / a, 
+          mouthY + aMouthYOffset - aMouthHeight * b
+        );
+        p5.endShape(p5.CLOSE);
+        
+        // 縁を描画
+        p5.stroke(255);
+        p5.strokeWeight(strokeWeight * 0.8);
+        p5.noFill();
+        p5.beginShape();
+        p5.vertex(p5.width / 2 - aMouthWidth / a, mouthY + aMouthYOffset - aMouthHeight * b);
+        p5.bezierVertex(
+          p5.width / 2 - aMouthWidth / 2, 
+          mouthY + aMouthYOffset + aMouthHeight * c,
+          p5.width / 2 + aMouthWidth / 2, 
+          mouthY + aMouthYOffset + aMouthHeight * c,
+          p5.width / 2 + aMouthWidth / a, 
+          mouthY + aMouthYOffset - aMouthHeight * b
+        );
+        p5.endShape();
+
+        // 上側にも横線を描画
+        p5.stroke(255);
+        p5.strokeWeight(strokeWeight * 0.8);
+        p5.line(
+          p5.width / 2 - aMouthWidth / a,
+          mouthY + aMouthYOffset - aMouthHeight * b,
+          p5.width / 2 + aMouthWidth / a,
+          mouthY + aMouthYOffset - aMouthHeight * b
+        );
+        break;
+        
+      case 'mouth_i':
+        // 「い」の口 - 横に開いた線
+        // 現在の表情に応じたY座標調整を取得
+        const iMouthYOffset = params.eyeSize * (talkingMouthSettings[expression]?.mouth_i || 0.0);
+        p5.stroke(255);
+        p5.strokeWeight(strokeWeight * 0.9);
+        p5.line(
+          p5.width / 2 - mouthWidth * 0.3,
+          mouthY + iMouthYOffset,
+          p5.width / 2 + mouthWidth * 0.3,
+          mouthY + iMouthYOffset
+        );
+        break;
+        
+      case 'mouth_o':
+        // 「お」の口 - 小さな丸
+        // 現在の表情に応じたY座標調整を取得
+        const oMouthYOffset = params.eyeSize * (talkingMouthSettings[expression]?.mouth_o || -0.02);
+        p5.noStroke();
+        p5.fill(255);
+        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35, mouthHeight * 1.5);
+        
+        // 白い縁を描画
+        p5.stroke(255);
+        p5.strokeWeight(strokeWeight * 0.8);
+        p5.noFill();
+        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35, mouthHeight * 1.5);
         break;
     }
     

@@ -1,5 +1,5 @@
 // 顔アニメーションに関する型定義
-export type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'mouth3' | 'pien';
+export type FacialExpression = 'neutral' | 'happy' | 'angry' | 'sad' | 'surprised' | 'crying' | 'hurt' | 'wink' | 'mouth3' | 'pien' | 'mouth_a' | 'mouth_i' | 'mouth_o';
 
 export type BlinkState = 'normal' | 'blinking' | 'enlarged';
 
