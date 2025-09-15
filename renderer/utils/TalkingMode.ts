@@ -10,7 +10,7 @@ export class TalkingMode {
   private switchInterval: number = 400; // 400msごとに切り替え
   private isRandomMode: boolean = false; // ランダムモードフラグ
   private minInterval: number = 150; // 最小切り替え間隔（ms）
-  private maxInterval: number = 400; // 最大切り替え間隔（ms）
+  private maxInterval: number = 350; // 最大切り替え間隔（ms）
   
   // バウンスアニメーション用
   private bounceStartTime: number = 0;
