@@ -1250,52 +1250,52 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       // scaleX: 横幅の調整倍数
       // scaleY: 縦幅の調整倍数
       neutral: { 
-        mouth_a: { yOffset: -0.12, scaleX: 0.8, scaleY: 0.8 }, 
+        mouth_a: { yOffset: -0.08, scaleX: 0.8, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.12, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.07, scaleX: 0.9, scaleY: 0.7 } 
       },
       happy: { 
-        mouth_a: { yOffset: -0.25, scaleX: 0.8, scaleY: 0.8 }, 
+        mouth_a: { yOffset: -0.21, scaleX: 0.8, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.25, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.2, scaleX: 0.9, scaleY: 0.7 } 
       },
       angry: { 
-        mouth_a: { yOffset: -0.04, scaleX: 0.8, scaleY: 0.7 }, 
+        mouth_a: { yOffset: -0.01, scaleX: 0.8, scaleY: 0.7 }, 
         mouth_i: { yOffset: -0.04, scaleX: 0.7, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.04, scaleX: 0.8, scaleY: 0.6 } 
       },
       sad: { 
-        mouth_a: { yOffset: -0.08, scaleX: 0.8, scaleY: 0.5 }, 
+        mouth_a: { yOffset: -0.04, scaleX: 0.8, scaleY: 0.7 }, 
         mouth_i: { yOffset: -0.08, scaleX: 0.9, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.03, scaleX: 0.9, scaleY: 0.7 } 
       },
       surprised: { 
-        mouth_a: { yOffset: 0.02, scaleX: 0.6, scaleY: 0.8 }, 
+        mouth_a: { yOffset: 0.03, scaleX: 0.6, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.01, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: 0.08, scaleX: 0.9, scaleY: 0.7 } 
       },
       crying: { 
-        mouth_a: { yOffset: -0.14, scaleX: 0.9, scaleY: 0.6 }, 
+        mouth_a: { yOffset: -0.10, scaleX: 0.8, scaleY: 0.7 }, 
         mouth_i: { yOffset: -0.14, scaleX: 0.9, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.09, scaleX: 0.9, scaleY: 0.7 } 
       },
       hurt: { 
-        mouth_a: { yOffset: -0.13, scaleX: 0.8, scaleY: 0.7 }, 
+        mouth_a: { yOffset: -0.09, scaleX: 0.8, scaleY: 0.7 }, 
         mouth_i: { yOffset: -0.13, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.08, scaleX: 0.8, scaleY: 0.6 } 
       },
       wink: { 
-        mouth_a: { yOffset: -0.10, scaleX: 0.7, scaleY: 0.8 }, 
+        mouth_a: { yOffset: -0.06, scaleX: 0.7, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.10, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.1, scaleX: 0.9, scaleY: 0.7 } 
       },
       mouth3: { 
-        mouth_a: { yOffset: -0.03, scaleX: 0.8, scaleY: 0.6 }, 
+        mouth_a: { yOffset: 0.01, scaleX: 0.8, scaleY: 0.7 }, 
         mouth_i: { yOffset: -0.03, scaleX: 0.8, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.03, scaleX: 0.9, scaleY: 0.7 } 
       },
       pien: { 
-        mouth_a: { yOffset: -0.09, scaleX: 0.6, scaleY: 0.8 }, 
+        mouth_a: { yOffset: -0.05, scaleX: 0.6, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.09, scaleX: 0.7, scaleY: 1.0 }, 
         mouth_o: { yOffset: -0.06, scaleX: 0.8, scaleY: 0.4 } 
       }

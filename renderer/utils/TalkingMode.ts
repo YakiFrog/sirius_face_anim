@@ -10,7 +10,7 @@ export class TalkingMode {
   private switchInterval: number = 400; // 400msごとに切り替え
   private isRandomMode: boolean = false; // ランダムモードフラグ
   private minInterval: number = 150; // 最小切り替え間隔（ms）
-  private maxInterval: number = 300; // 最大切り替え間隔（ms）
+  private maxInterval: number = 400; // 最大切り替え間隔（ms）
   
   // バウンスアニメーション用
   private bounceStartTime: number = 0;
@@ -60,7 +60,7 @@ export class TalkingMode {
     
     // 「i」の口の場合は切り替え時間を短くする
     if (this.mouthPatterns[this.currentMouthPattern] === 'mouth_i') {
-      interval *= 0.4; // 60%に短縮
+      interval *= 0.4; // 40%に短縮
     }
     
     this.intervalId = setTimeout(() => {
