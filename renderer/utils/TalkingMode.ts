@@ -8,6 +8,9 @@ export class TalkingMode {
   private intervalId: NodeJS.Timeout | null = null;
   private mouthPatterns: string[] = ['mouth_a', 'mouth_i', 'mouth_o'];
   private switchInterval: number = 400; // 400msごとに切り替え
+  private isRandomMode: boolean = false; // ランダムモードフラグ
+  private minInterval: number = 150; // 最小切り替え間隔（ms）
+  private maxInterval: number = 300; // 最大切り替え間隔（ms）
   
   // バウンスアニメーション用
   private bounceStartTime: number = 0;
@@ -23,7 +26,7 @@ export class TalkingMode {
   /**
    * おしゃべりモードを開始
    */
-  public start(): void {
+  public start(randomMode: boolean = false): void {
     if (this.isActive) return;
     
     // 停止待機中の場合はキャンセル
@@ -34,17 +37,59 @@ export class TalkingMode {
     }
     
     this.isActive = true;
+    this.isRandomMode = randomMode;
     this.currentMouthPattern = 0;
     this.startBounceAnimation();
     
-    console.log('✨ おしゃべりモード開始');
+    console.log(`✨ ${randomMode ? 'ランダム' : '順次'}おしゃべりモード開始`);
     
-    // 定期的に口のパターンを切り替え
-    this.intervalId = setInterval(() => {
-      this.currentMouthPattern = (this.currentMouthPattern + 1) % this.mouthPatterns.length;
-      this.startBounceAnimation();
-      console.log(`口パターン変更: ${this.mouthPatterns[this.currentMouthPattern]}`);
-    }, this.switchInterval);
+    // 最初のパターン変更をスケジュール
+    this.scheduleNextPatternChange();
+  }
+
+  /**
+   * 次のパターン変更をスケジュール
+   */
+  private scheduleNextPatternChange(): void {
+    if (!this.isActive) return;
+    
+    // ランダムモードの場合は時間間隔もランダムに
+    let interval = this.isRandomMode 
+      ? Math.random() * (this.maxInterval - this.minInterval) + this.minInterval
+      : this.switchInterval;
+    
+    // 「i」の口の場合は切り替え時間を短くする
+    if (this.mouthPatterns[this.currentMouthPattern] === 'mouth_i') {
+      interval *= 0.4; // 60%に短縮
+    }
+    
+    this.intervalId = setTimeout(() => {
+      if (!this.isActive) return;
+      
+      let newPattern: number;
+      
+      if (this.isRandomMode) {
+        // ランダムモード：0-2のランダムな値（前回と同じでも可）
+        newPattern = Math.floor(Math.random() * this.mouthPatterns.length);
+      } else {
+        // 順次モード：順番に切り替え
+        newPattern = (this.currentMouthPattern + 1) % this.mouthPatterns.length;
+      }
+      
+      // パターンが実際に変わった場合のみバウンスアニメーションを実行
+      const patternChanged = newPattern !== this.currentMouthPattern;
+      this.currentMouthPattern = newPattern;
+      
+      if (patternChanged) {
+        this.startBounceAnimation();
+        console.log(`口パターン変更: ${this.mouthPatterns[this.currentMouthPattern]} (${interval.toFixed(0)}ms後)`);
+      } else {
+        console.log(`口パターン変更なし: ${this.mouthPatterns[this.currentMouthPattern]} (同じパターンのためバウンスなし)`);
+      }
+      
+      // 次のパターン変更をスケジュール
+      this.scheduleNextPatternChange();
+    }, interval);
   }
 
   /**
@@ -121,7 +166,7 @@ export class TalkingMode {
     this.startBounceAnimation();
     
     if (this.intervalId) {
-      clearInterval(this.intervalId);
+      clearTimeout(this.intervalId);
       this.intervalId = null;
     }
     
@@ -131,6 +176,21 @@ export class TalkingMode {
     }
     
     console.log('🔇 おしゃべりモード停止');
+  }
+
+  /**
+   * ランダムモードかどうかを取得
+   */
+  public getIsRandomMode(): boolean {
+    return this.isRandomMode;
+  }
+
+  /**
+   * ランダム時間間隔の範囲を設定
+   */
+  public setRandomIntervalRange(minMs: number, maxMs: number): void {
+    this.minInterval = Math.max(minMs, 100); // 最小100ms
+    this.maxInterval = Math.min(maxMs, 2000); // 最大2000ms
   }
 
   /**
@@ -150,11 +210,11 @@ export class TalkingMode {
   /**
    * おしゃべりモードの切り替え
    */
-  public toggle(): void {
+  public toggle(randomMode: boolean = false): void {
     if (this.isActive) {
       this.stop();
     } else {
-      this.start();
+      this.start(randomMode);
     }
   }
 

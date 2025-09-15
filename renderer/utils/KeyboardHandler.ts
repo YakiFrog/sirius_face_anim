@@ -71,6 +71,8 @@ export class KeyboardHandler {
       this.handleRestoreMousePosition();
     } else if (p5.key === 's' || p5.key === 'S') {
       this.handleTalkingModeToggle();
+    } else if (p5.key === 'd' || p5.key === 'D') {
+      this.handleRandomTalkingModeToggle();
     } else if (p5.key === '0') {
       this.setManualExpression('pien');
     } else if (this.displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
@@ -128,6 +130,11 @@ export class KeyboardHandler {
   private handleTalkingModeToggle() {
     console.log('Sキー: おしゃべりモード切り替え');
     this.talkingMode.toggle();
+  }
+
+  private handleRandomTalkingModeToggle() {
+    console.log('Dキー: ランダムおしゃべりモード切り替え');
+    this.talkingMode.toggle(true);
   }
 
   public getTalkingMode(): TalkingMode {
