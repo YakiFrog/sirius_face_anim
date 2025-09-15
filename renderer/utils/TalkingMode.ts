@@ -13,6 +13,10 @@ export class TalkingMode {
   private bounceStartTime: number = 0;
   private bounceAnimationDuration: number = 150; // 150msのアニメーション
   private isBouncing: boolean = false;
+  
+  // 停止待機用
+  private pendingStop: boolean = false;
+  private stopTimeoutId: NodeJS.Timeout | null = null;
 
   constructor() {}
 
@@ -81,7 +85,9 @@ export class TalkingMode {
     
     this.isActive = false;
     this.currentMouthPattern = 0;
-    this.isBouncing = false;
+    
+    // 停止時にもバウンスアニメーションを開始
+    this.startBounceAnimation();
     
     if (this.intervalId) {
       clearInterval(this.intervalId);

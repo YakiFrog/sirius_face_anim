@@ -1304,10 +1304,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // おしゃべりモードの場合は特別処理
     const talkingMode = keyboardHandler.current?.getTalkingMode();
     let currentExpression = expression;
+    let bounceScale = 1.0;
     
     if (talkingMode?.getIsActive()) {
       const mouthPattern = talkingMode.getCurrentMouthPattern();
       currentExpression = mouthPattern as any; // 一時的にキャスト
+      bounceScale = talkingMode.getBounceScale();
+    } else if (talkingMode?.getIsBouncing()) {
+      // おしゃべりモード終了時のバウンスアニメーション
+      bounceScale = talkingMode.getBounceScale();
     }
 
     // 表情による口の位置調整
@@ -1356,14 +1361,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     // 表情に応じた口の描画
     switch (currentExpression) {
       case 'neutral':
-        const naturalMouthWidth = mouthWidth * 0.8;
+        const naturalMouthWidth = mouthWidth * 0.8 * bounceScale;
+        const naturalMouthHeight = mouthHeight * bounceScale;
         p5.beginShape();
         p5.vertex(p5.width / 2 - naturalMouthWidth / 2, mouthY);
         p5.bezierVertex(
           p5.width / 2 - naturalMouthWidth / 4,
-          mouthY + mouthHeight * 0.6, 
+          mouthY + naturalMouthHeight * 0.6, 
           p5.width / 2 + naturalMouthWidth / 4, 
-          mouthY + mouthHeight * 0.6, 
+          mouthY + naturalMouthHeight * 0.6, 
           p5.width / 2 + naturalMouthWidth / 2, 
           mouthY
         );
@@ -1371,14 +1377,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'happy':
-        const happyMouthWidth = mouthWidth * 0.8;
+        const happyMouthWidth = mouthWidth * 0.8 * bounceScale;
+        const happyMouthHeight = mouthHeight * bounceScale;
         p5.beginShape();
         p5.vertex(p5.width / 2 - happyMouthWidth / 2, mouthY);
         p5.bezierVertex(
           p5.width / 2 - happyMouthWidth / 4, 
-          mouthY + mouthHeight * 1.2, 
+          mouthY + happyMouthHeight * 1.2, 
           p5.width / 2 + happyMouthWidth / 4, 
-          mouthY + mouthHeight * 1.2, 
+          mouthY + happyMouthHeight * 1.2, 
           p5.width / 2 + happyMouthWidth / 2, 
           mouthY
         );
@@ -1386,16 +1393,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'angry':
-        const angryMouthWidth = mouthWidth * 0.75;
+        const angryMouthWidth = mouthWidth * 0.75 * bounceScale;
+        const angryMouthHeight = mouthHeight * bounceScale;
         p5.beginShape();
-        p5.vertex(p5.width / 2 - angryMouthWidth / 2, mouthY + mouthHeight * 0.5);
+        p5.vertex(p5.width / 2 - angryMouthWidth / 2, mouthY + angryMouthHeight * 0.5);
         p5.bezierVertex(
           p5.width / 2 - angryMouthWidth / 4, 
-          mouthY - mouthHeight * 0.3, 
+          mouthY - angryMouthHeight * 0.3, 
           p5.width / 2 + angryMouthWidth / 4, 
-          mouthY - mouthHeight * 0.3, 
+          mouthY - angryMouthHeight * 0.3, 
           p5.width / 2 + angryMouthWidth / 2, 
-          mouthY + mouthHeight * 0.5
+          mouthY + angryMouthHeight * 0.5
         );
         p5.endShape();
         break;
@@ -1403,23 +1411,24 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'sad':
       case 'crying':
         p5.beginShape();
-        const sadMouthWidth = mouthWidth * 0.75;
-        p5.vertex(p5.width / 2 - sadMouthWidth / 2, mouthY - mouthHeight * 0.3);
+        const sadMouthWidth = mouthWidth * 0.75 * bounceScale;
+        const sadMouthHeight = mouthHeight * bounceScale;
+        p5.vertex(p5.width / 2 - sadMouthWidth / 2, mouthY - sadMouthHeight * 0.3);
         p5.bezierVertex(
           p5.width / 2 - sadMouthWidth / 4, 
-          mouthY - mouthHeight * 0.8, 
+          mouthY - sadMouthHeight * 0.8, 
           p5.width / 2 + sadMouthWidth / 4, 
-          mouthY - mouthHeight * 0.8, 
+          mouthY - sadMouthHeight * 0.8, 
           p5.width / 2 + sadMouthWidth / 2, 
-          mouthY - mouthHeight * 0.3
+          mouthY - sadMouthHeight * 0.3
         );
         p5.endShape();
         break;
         
       case 'surprised':
         p5.beginShape();
-        const surprisedMouthWidth = mouthWidth * 0.35;
-        const surprisedMouthHeight = mouthHeight * 2.5;
+        const surprisedMouthWidth = mouthWidth * 0.35 * bounceScale;
+        const surprisedMouthHeight = mouthHeight * 2.5 * bounceScale;
         
         p5.noStroke();
         p5.fill(255);
@@ -1445,14 +1454,15 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'wink':
         p5.beginShape();
-        const winkMouthWidth = mouthWidth * 0.55;
-        const leftY = mouthY + mouthHeight * 0.45;
+        const winkMouthWidth = mouthWidth * 0.55 * bounceScale;
+        const winkMouthHeight = mouthHeight * bounceScale;
+        const leftY = mouthY + winkMouthHeight * 0.45;
         p5.vertex(p5.width / 2 - winkMouthWidth / 2, leftY);
         
         const centerControlX1 = p5.width / 2.1 - winkMouthWidth / 6;
         const centerControlX2 = p5.width / 2.0 + winkMouthWidth / 5;
-        const centerControlY = mouthY + mouthHeight * 1.0;
-        const rightY = mouthY + mouthHeight * 0.1;
+        const centerControlY = mouthY + winkMouthHeight * 1.0;
+        const rightY = mouthY + winkMouthHeight * 0.1;
         
         p5.bezierVertex(
           centerControlX1, centerControlY,
@@ -1463,8 +1473,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'mouth3':
-        const mouth3Width = mouthWidth * 0.6;
-        const mouth3Height = mouthHeight * 1.15;
+        const mouth3Width = mouthWidth * 0.6 * bounceScale;
+        const mouth3Height = mouthHeight * 1.15 * bounceScale;
         
         p5.beginShape();
         p5.noFill();
@@ -1491,16 +1501,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'pien':
         p5.beginShape();
-        const pienMouthWidth = mouthWidth * 0.55;
-        const pienMouthY = mouthY + mouthHeight * 0.2;
+        const pienMouthWidth = mouthWidth * 0.55 * bounceScale;
+        const pienMouthHeight = mouthHeight * bounceScale;
+        const pienMouthY = mouthY + pienMouthHeight * 0.2;
         // 口の両端の丸みを保つため、正確な中心位置を計算
         const pienCenterX = p5.width / 2;
         p5.vertex(pienCenterX - pienMouthWidth / 2, pienMouthY);
         p5.bezierVertex(
           pienCenterX - pienMouthWidth / 4, 
-          pienMouthY - mouthHeight * 0.65,
+          pienMouthY - pienMouthHeight * 0.65,
           pienCenterX + pienMouthWidth / 4, 
-          pienMouthY - mouthHeight * 0.65, 
+          pienMouthY - pienMouthHeight * 0.65, 
           pienCenterX + pienMouthWidth / 2, 
           pienMouthY
         );
@@ -1508,7 +1519,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'hurt':
-        const hurtMouthWidth = mouthWidth * 0.6;
+        const hurtMouthWidth = mouthWidth * 0.6 * bounceScale;
+        const hurtMouthHeight = mouthHeight * bounceScale;
         
         p5.beginShape();
         p5.noFill();
@@ -1522,8 +1534,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
           const startX = p5.width / 2 - hurtMouthWidth / 2 + i * segmentWidth;
           const endX = startX + segmentWidth;
           
-          const waveHeight = (i % 2 === 0) ? mouthHeight * 0.15 : -mouthHeight * 0.1;
-          const controlHeight = (i % 2 === 0) ? mouthHeight * 0.25 : -mouthHeight * 0.2;
+          const waveHeight = (i % 2 === 0) ? hurtMouthHeight * 0.15 : -hurtMouthHeight * 0.1;
+          const controlHeight = (i % 2 === 0) ? hurtMouthHeight * 0.25 : -hurtMouthHeight * 0.2;
           
           p5.bezierVertex(
             startX + segmentWidth * 0.35, mouthY + controlHeight,
