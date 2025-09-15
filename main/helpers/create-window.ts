@@ -78,6 +78,7 @@ export const createWindow = (
       contextIsolation: true,
       ...options.webPreferences,
     },
+    fullscreen: true,
   })
 
   win.on('close', saveState)

@@ -1297,7 +1297,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       pien: { 
         mouth_a: { yOffset: -0.09, scaleX: 0.6, scaleY: 0.8 }, 
         mouth_i: { yOffset: -0.09, scaleX: 0.7, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.06, scaleX: 0.8, scaleY: 0.6 } 
+        mouth_o: { yOffset: -0.06, scaleX: 0.8, scaleY: 0. } 
       }
     };
 
