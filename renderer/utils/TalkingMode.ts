@@ -7,11 +7,11 @@ export class TalkingMode {
   private currentMouthPattern: number = 0;
   private intervalId: NodeJS.Timeout | null = null;
   private mouthPatterns: string[] = ['mouth_a', 'mouth_i', 'mouth_o'];
-  private switchInterval: number = 300; // 300msごとに切り替え
+  private switchInterval: number = 400; // 400msごとに切り替え
   
   // バウンスアニメーション用
   private bounceStartTime: number = 0;
-  private bounceAnimationDuration: number = 150; // 200msのアニメーション
+  private bounceAnimationDuration: number = 150; // 150msのアニメーション
   private isBouncing: boolean = false;
 
   constructor() {}
@@ -59,8 +59,8 @@ export class TalkingMode {
     }
     
     // バウンスイージング関数
-    // 1.0 → 1.3 → 1.0 の動きを作る
-    const bounceHeight = 0.1; // 30%拡大
+    // 1.0 → 1.1 → 1.0 の動きを作る
+    const bounceHeight = 0.1; // 10%拡大
     const bounceScale = 1.0 + bounceHeight * Math.sin(progress * Math.PI);
     
     return bounceScale;
