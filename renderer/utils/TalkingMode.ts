@@ -26,6 +26,13 @@ export class TalkingMode {
   public start(): void {
     if (this.isActive) return;
     
+    // 停止待機中の場合はキャンセル
+    this.pendingStop = false;
+    if (this.stopTimeoutId) {
+      clearTimeout(this.stopTimeoutId);
+      this.stopTimeoutId = null;
+    }
+    
     this.isActive = true;
     this.currentMouthPattern = 0;
     this.startBounceAnimation();
@@ -59,6 +66,12 @@ export class TalkingMode {
     
     if (progress >= 1.0) {
       this.isBouncing = false;
+      
+      // アニメーション完了時に停止待機中だった場合、実際に停止する
+      if (this.pendingStop) {
+        this.executeStop();
+      }
+      
       return 1.0;
     }
     
@@ -83,8 +96,26 @@ export class TalkingMode {
   public stop(): void {
     if (!this.isActive) return;
     
+    // 現在アニメーション中の場合は停止を待機
+    if (this.isBouncing) {
+      this.pendingStop = true;
+      console.log('🔄 アニメーション完了待ち - おしゃべりモード停止予約');
+      return;
+    }
+    
+    // アニメーション中でない場合は即座に停止
+    this.executeStop();
+  }
+
+  /**
+   * 実際の停止処理を実行
+   */
+  private executeStop(): void {
+    if (!this.isActive && !this.pendingStop) return;
+    
     this.isActive = false;
     this.currentMouthPattern = 0;
+    this.pendingStop = false;
     
     // 停止時にもバウンスアニメーションを開始
     this.startBounceAnimation();
@@ -92,6 +123,11 @@ export class TalkingMode {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
+    }
+    
+    if (this.stopTimeoutId) {
+      clearTimeout(this.stopTimeoutId);
+      this.stopTimeoutId = null;
     }
     
     console.log('🔇 おしゃべりモード停止');
@@ -126,6 +162,11 @@ export class TalkingMode {
    * クリーンアップ
    */
   public cleanup(): void {
-    this.stop();
+    this.pendingStop = false;
+    if (this.stopTimeoutId) {
+      clearTimeout(this.stopTimeoutId);
+      this.stopTimeoutId = null;
+    }
+    this.executeStop();
   }
 }
