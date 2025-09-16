@@ -36,14 +36,8 @@
 - **手動変更の反映**: キーボード・タッチ操作時にサーバーへ自動送信
 - **競合回避**: 手動変更時は5秒間ポーリングを停止
 - **リアルタイム同期**: 複数システム間での表情同期
-
-### ROS2連携機能（🆕 重要機能）
-- **双方向同期**: ROS2サーバーとクライアント間で表情状態を同期
-- **自動ポーリング**: 1秒間隔でサーバーから表情状態を取得
-- **手動変更の反映**: キーボード・タッチ操作時にサーバーへ自動送信
-- **競合回避**: 手動変更時は5秒間ポーリングを停止
-- **リアルタイム同期**: 複数システム間での表情同期
 - **表示モード切り替え**: face/imageモードの自動同期
+- **お喋り口モード制御**: HTTP APIによる音声反応機能のオン/オフ制御
 
 ### タッチ操作システム（🆕 高度機能）
 - **精密な当たり判定**: フルスクリーンモードでも正確な座標変換
@@ -131,6 +125,7 @@ yarn build
 | `Q` | - | 撫で時間表示切り替え |
 | `P` | - | Picture-in-Picture切り替え |
 | `I` | - | 表示モード切り替え（顔⇔画像） |
+| `D` | - | お喋り口モード切り替え（オン⇔オフ） |
 
 ### タッチ/マウス操作
 
@@ -182,6 +177,48 @@ Content-Type: application/json
 }
 ```
 
+#### 表示モード制御
+```http
+GET /display_mode
+```
+
+**レスポンス例:**
+```json
+{
+  "display_mode": "face"
+}
+```
+
+```http
+POST /display_mode
+Content-Type: application/json
+
+{
+  "display_mode": "image"
+}
+```
+
+#### お喋り口モード制御
+```http
+GET /talking_mouth_mode
+```
+
+**レスポンス例:**
+```json
+{
+  "talking_mouth_mode": true
+}
+```
+
+```http
+POST /talking_mouth_mode
+Content-Type: application/json
+
+{
+  "talking_mouth_mode": false
+}
+```
+
 **HTTPステータス:**
 - `200 OK`: 成功
 - `400 Bad Request`: 無効な表情タイプ
@@ -207,6 +244,27 @@ curl -X POST http://localhost:8080/expression \
 curl -X POST http://localhost:8080/expression \
   -H "Content-Type: application/json" \
   -d '{"expression": "mouth3"}'
+
+# 表示モードを取得
+curl http://localhost:8080/display_mode
+
+# 表示モードを画像モードに変更
+curl -X POST http://localhost:8080/display_mode \
+  -H "Content-Type: application/json" \
+  -d '{"display_mode": "image"}'
+
+# お喋り口モードの状態を取得
+curl http://localhost:8080/talking_mouth_mode
+
+# お喋り口モードをオンに設定
+curl -X POST http://localhost:8080/talking_mouth_mode \
+  -H "Content-Type: application/json" \
+  -d '{"talking_mouth_mode": true}'
+
+# お喋り口モードをオフに設定
+curl -X POST http://localhost:8080/talking_mouth_mode \
+  -H "Content-Type: application/json" \
+  -d '{"talking_mouth_mode": false}'
 ```
 
 ## ⚙️ 設定

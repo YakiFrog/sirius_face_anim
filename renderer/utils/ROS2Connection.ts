@@ -136,6 +136,43 @@ export class ROS2Connection {
     }
   }
 
+  // お喋り口モードの状態を取得
+  public async fetchTalkingMouthMode(): Promise<boolean | null> {
+    if (!this.enableRos2Connection) return null;
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(2000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return !!data.talking_mouth_mode;
+      }
+    } catch (error) {
+      console.warn('お喋り口モード取得失敗:', error.message);
+    }
+    return null;
+  }
+
+  // お喋り口モードのオン/オフを設定
+  public async setTalkingMouthMode(enable: boolean): Promise<void> {
+    if (!this.enableRos2Connection) return;
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ talking_mouth_mode: enable }),
+        signal: AbortSignal.timeout(2000)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.warn('お喋り口モード切替失敗:', error.message);
+    }
+  }
+
   private isValidExpression(exp: string): boolean {
     return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink', 'mouth3', 'pien'].includes(exp);
   }
