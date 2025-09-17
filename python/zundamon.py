@@ -160,8 +160,8 @@ class AudioPlayer:
         """say コマンドで音声再生（改良版 - 音声途切れ対策）"""
         try:
             # 推定再生時間を計算
-            estimated_duration = len(text) / 2.0  # 2文字/秒（保守的）
-            min_duration = max(estimated_duration, 2.0)  # 最低2秒
+            estimated_duration = len(text) / 4  # 2文字/秒（保守的）
+            min_duration = max(estimated_duration, 1.5)  # 最低2秒
             
             # 複数の音声オプションを試す
             voice_options = [
@@ -192,7 +192,7 @@ class AudioPlayer:
                         actual_duration = time.time() - start_time
                         
                         if process.returncode == 0:
-                            logger.info(f"✅ 音声再生成功 (時間: {actual_duration:.2f}秒, 音声: {current_voice})")
+                            logger.info(f"✅ 音声再生成功 (時間: {actual_duration:.2f}秒, 推定: {min_duration:.2f}秒")
                             self.is_playing = False
                             return actual_duration
                         else:
@@ -307,7 +307,7 @@ class ZundamonSpeaker:
         
         # 音声設定（日本語対応音声を優先的に試す）
         self.voice_candidates = ["Kyoko", "Eddy (日本語（日本）)", "Reed (日本語（日本）)", "Flo (日本語（日本）)"]
-        self.voice_name = self.select_best_voice()
+        self.voice_name = "Eddy (日本語（日本）)"  # 初期値
         
         logger.info(f"🎤 選択された音声: {self.voice_name}")
     
@@ -362,33 +362,42 @@ class ZundamonSpeaker:
             return False
     
     async def speak_async(self, text: str) -> bool:
-        """非同期でセリフを発話（改良版）"""
+        """非同期でセリフを発話（改良版 - 口パクと音声の同期）"""
         logger.info(f"📢 発話開始: '{text}' (音声: {self.voice_name})")
         
         try:
-            # 1. おしゃべりモードをオン
+            # 1. 音声再生を先に開始（バックグラウンド）
+            logger.info("🔊 音声再生開始...")
+            
+            # 音声再生プロセスを非同期で開始
+            audio_task = asyncio.create_task(
+                self._play_audio_async(text)
+            )
+            
+            # 2. 少し待ってから口パクを開始（音声に合わせる）
+            await asyncio.sleep(0.35)  # 音声開始から0.5秒後に口パク開始
+            
+            # 3. おしゃべりモード有効化
             if not self.talking_controller.set_talking_mode(True):
                 logger.error("おしゃべりモード有効化失敗")
+                # 音声再生もキャンセル
+                audio_task.cancel()
                 return False
             
-            # モード切り替えを確実にする
-            await asyncio.sleep(0.2)
+            logger.info("🎭 口パク開始")
             
-            # 2. 音声再生（同期処理）
-            logger.info("🔊 音声再生開始...")
-            self.audio_player.is_playing = True
-            actual_duration = self.audio_player.play_say_command(text, self.voice_name)
+            # 4. 音声再生の完了を待機
+            actual_duration = await audio_task
             
             if actual_duration <= 0:
                 logger.error("音声再生に失敗しました")
                 self.talking_controller.set_talking_mode(False)
                 return False
             
-            # 3. 再生完了の確認
+            # 5. 再生完了の確認
             logger.info(f"✅ 音声再生完了 ({actual_duration:.2f}秒)")
             
-            # 4. 余裕を持たせてからおしゃべりモードをオフ
-            await asyncio.sleep(0.5)  # 少し長めに待機
+            # 6. おしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
             
             logger.info("✅ 発話完了")
@@ -399,6 +408,22 @@ class ZundamonSpeaker:
             # エラーが発生した場合は必ずおしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
             return False
+    
+    async def _play_audio_async(self, text: str) -> float:
+        """音声再生を非同期で実行"""
+        self.audio_player.is_playing = True
+        
+        # 非同期で音声再生を実行
+        loop = asyncio.get_event_loop()
+        duration = await loop.run_in_executor(
+            None, 
+            self.audio_player.play_say_command, 
+            text, 
+            self.voice_name
+        )
+        
+        self.audio_player.is_playing = False
+        return duration
     
     def speak_sync(self, text: str) -> bool:
         """同期的にセリフを発話"""
