@@ -383,7 +383,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         setIsConnected,
         setConnectionStatus,
         displayMode,
-        onDisplayModeToggle
+        onDisplayModeToggle,
+        keyboardHandler.current?.getTalkingMode()
       );
     }
     

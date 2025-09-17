@@ -1,4 +1,5 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
+import { TalkingMode } from './TalkingMode';
 
 export class ROS2Connection {
   private enableRos2Connection: boolean;
@@ -7,6 +8,7 @@ export class ROS2Connection {
   private connectionStatus: string = '切断';
   private pollingInterval?: NodeJS.Timeout;
   private isPollingActive: boolean = true;
+  private lastTalkingMouthModeState: boolean | null = null;
 
   constructor(enableRos2Connection: boolean, ros2HttpUrl: string) {
     this.enableRos2Connection = enableRos2Connection;
@@ -21,7 +23,8 @@ export class ROS2Connection {
     setIsConnected: (connected: boolean) => void,
     setConnectionStatus: (status: string) => void,
     displayMode: string,
-    onDisplayModeToggle?: () => void
+    onDisplayModeToggle?: () => void,
+    talkingMode?: TalkingMode
   ) {
     if (!this.enableRos2Connection) {
       setConnectionStatus('切断');
@@ -35,11 +38,13 @@ export class ROS2Connection {
     // 初回取得
     this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
     this.fetchDisplayMode(displayMode, onDisplayModeToggle);
+    this.fetchTalkingMouthModeAndControl(talkingMode);
 
     // ポーリング間隔を調整（1000ms = 1秒間隔）
     this.pollingInterval = setInterval(() => {
       this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
       this.fetchDisplayMode(displayMode, onDisplayModeToggle);
+      this.fetchTalkingMouthModeAndControl(talkingMode);
     }, 1000);
   }
 
@@ -114,6 +119,46 @@ export class ROS2Connection {
       }
     } catch (error) {
       console.log('表示モード取得エラー:', error.message);
+    }
+  }
+
+  private async fetchTalkingMouthModeAndControl(talkingMode?: TalkingMode) {
+    if (!this.isPollingActive || !talkingMode) return;
+
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(2000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const currentState = !!data.talking_mouth_mode;
+        
+        // 状態が変更された場合のみ制御
+        if (this.lastTalkingMouthModeState !== currentState) {
+          console.log(`お喋り口モード状態変更: ${this.lastTalkingMouthModeState} → ${currentState}`);
+          
+          if (currentState) {
+            // お喋りモードを開始（ランダムモード）
+            if (!talkingMode.getIsActive()) {
+              talkingMode.start(true); // Dキーと同じランダムモード
+              console.log('🎯 HTTPサーバー指示によりランダムおしゃべりモード開始');
+            }
+          } else {
+            // お喋りモードを停止
+            if (talkingMode.getIsActive()) {
+              talkingMode.stop();
+              console.log('🛑 HTTPサーバー指示によりおしゃべりモード停止');
+            }
+          }
+          
+          this.lastTalkingMouthModeState = currentState;
+        }
+      }
+    } catch (error) {
+      console.log('お喋り口モード制御エラー:', error.message);
     }
   }
 

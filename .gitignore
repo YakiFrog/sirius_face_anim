@@ -14,3 +14,7 @@ dist
 
 # IDE
 .vscode
+
+/python/bin
+/python/include
+/python/lib
