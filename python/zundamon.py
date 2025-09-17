@@ -157,39 +157,125 @@ class AudioPlayer:
                 pass
     
     def play_say_command(self, text: str, voice: str = "Kyoko") -> float:
-        """say コマンドで音声再生（同期実行）- 改良版"""
+        """say コマンドで音声再生（改良版 - 音声途切れ対策）"""
         try:
-            # 推定再生時間を計算（より保守的に）
-            estimated_duration = len(text) / 3  # 2.5文字/秒（ゆっくり目）
-            min_duration = max(estimated_duration, 3.0)  # 最低2秒
+            # 推定再生時間を計算
+            estimated_duration = len(text) / 2.0  # 2文字/秒（保守的）
+            min_duration = max(estimated_duration, 2.0)  # 最低2秒
             
-            # say コマンドで再生（より安全な設定）
+            # 複数の音声オプションを試す
+            voice_options = [
+                voice,  # 指定された音声
+                "Kyoko",  # デフォルト
+                "Eddy (日本語（日本）)",  # 代替1
+                "Reed (日本語（日本）)",   # 代替2
+            ]
+            
+            for attempt, current_voice in enumerate(voice_options):
+                try:
+                    logger.info(f"🔊 音声再生試行 {attempt + 1}: '{current_voice}'")
+                    
+                    # say コマンドの実行方法を改良
+                    start_time = time.time()
+                    
+                    # より安定した実行方法：Popenを使用して完了を待機
+                    process = subprocess.Popen(
+                        ["say", "-v", current_voice, text],  # -rパラメータを削除（問題の原因の可能性）
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    
+                    # プロセスの完了を待機（タイムアウト付き）
+                    try:
+                        stdout, stderr = process.communicate(timeout=max(min_duration * 2, 15))
+                        actual_duration = time.time() - start_time
+                        
+                        if process.returncode == 0:
+                            logger.info(f"✅ 音声再生成功 (時間: {actual_duration:.2f}秒, 音声: {current_voice})")
+                            self.is_playing = False
+                            return actual_duration
+                        else:
+                            logger.warning(f"⚠️ 音声 '{current_voice}' で失敗: return code {process.returncode}")
+                            if stderr:
+                                logger.warning(f"エラー詳細: {stderr}")
+                            continue  # 次の音声を試す
+                            
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"⚠️ 音声 '{current_voice}' でタイムアウト")
+                        process.kill()
+                        continue  # 次の音声を試す
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ 音声 '{current_voice}' で例外: {e}")
+                    continue  # 次の音声を試す
+            
+            # すべての音声で失敗した場合、ファイル経由を試す
+            logger.warning("直接再生に失敗、音声ファイル経由を試行")
+            file_duration = self.play_say_command_with_file(text, voice)
+            if file_duration > 0:
+                self.is_playing = False
+                return file_duration
+            
+            logger.error("❌ すべての音声再生方法で失敗しました")
+            self.is_playing = False
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"❌ 音声再生エラー: {e}")
+            self.is_playing = False
+            return 0.0
+            
+    def play_say_command_with_file(self, text: str, voice: str = "Kyoko") -> float:
+        """音声ファイル経由での再生（途切れ対策の代替手段）"""
+        try:
+            import tempfile
+            import os
+            
+            # 一時音声ファイルを作成
+            with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as temp_file:
+                temp_path = temp_file.name
+            
+            # 音声ファイルを生成
             start_time = time.time()
-            result = subprocess.run(
-                ["say", "-v", voice, "-r", "180", text],  # -r 180で読み上げ速度を指定（180wpm）
+            generate_result = subprocess.run(
+                ["say", "-v", voice, "-o", temp_path, text],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,  # エラー出力をキャプチャ
-                timeout=max(min_duration * 3, 20),  # より長いタイムアウト
+                stderr=subprocess.PIPE,
+                timeout=10,
                 text=True
             )
-            actual_duration = time.time() - start_time
             
-            self.is_playing = False  # 再生完了
-            
-            if result.returncode == 0:
-                logger.info(f"🔊 音声再生完了 (実際の時間: {actual_duration:.2f}秒, 推定: {estimated_duration:.2f}秒)")
-                return actual_duration
-            else:
-                logger.error(f"say コマンド実行失敗: return code {result.returncode}")
-                if result.stderr:
-                    logger.error(f"エラー詳細: {result.stderr}")
+            if generate_result.returncode != 0:
+                logger.error(f"音声ファイル生成失敗: {generate_result.stderr}")
                 return 0.0
             
-        except subprocess.TimeoutExpired:
-            logger.error(f"音声再生がタイムアウトしました (制限時間: {max(min_duration * 3, 20):.2f}秒)")
-            return 0.0
+            # 音声ファイルを再生
+            play_result = subprocess.run(
+                ["afplay", temp_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=15,
+                text=True
+            )
+            
+            actual_duration = time.time() - start_time
+            
+            # 一時ファイルを削除
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            if play_result.returncode == 0:
+                logger.info(f"✅ 音声ファイル経由で再生成功 (時間: {actual_duration:.2f}秒)")
+                return actual_duration
+            else:
+                logger.error(f"音声ファイル再生失敗: {play_result.stderr}")
+                return 0.0
+                
         except Exception as e:
-            logger.error(f"say コマンド再生エラー: {e}")
+            logger.error(f"音声ファイル再生エラー: {e}")
             return 0.0
     
     def _get_audio_duration(self, file_path: str) -> float:
@@ -220,13 +306,13 @@ class ZundamonSpeaker:
         self.audio_player = AudioPlayer()
         
         # 音声設定（日本語対応音声を優先的に試す）
-        self.voice_candidates = ["Kyoko", "Otoya", "Yuna", "Haruka", "Karen"]  # 日本語音声候補
+        self.voice_candidates = ["Kyoko", "Eddy (日本語（日本）)", "Reed (日本語（日本）)", "Flo (日本語（日本）)"]
         self.voice_name = self.select_best_voice()
         
         logger.info(f"🎤 選択された音声: {self.voice_name}")
     
     def select_best_voice(self) -> str:
-        """利用可能な最適な日本語音声を選択"""
+        """利用可能な最適な日本語音声を選択（改良版）"""
         try:
             # 利用可能な音声一覧を取得
             result = subprocess.run(
@@ -238,19 +324,21 @@ class ZundamonSpeaker:
             
             if result.returncode == 0:
                 available_voices = result.stdout
-                logger.info("📋 利用可能な音声:")
+                logger.info("📋 利用可能な日本語音声をテスト中...")
                 
-                # 候補の音声から利用可能なものを探す
+                # 各音声をテストして動作するものを選択
                 for candidate in self.voice_candidates:
                     if candidate in available_voices:
-                        # 日本語対応かチェック
-                        if "ja_JP" in available_voices or "Japanese" in available_voices:
-                            logger.info(f"✅ 日本語音声 '{candidate}' を選択")
+                        # 簡単なテストを実行
+                        if self.test_voice(candidate):
+                            logger.info(f"✅ 音声 '{candidate}' を選択（テスト成功）")
                             return candidate
+                        else:
+                            logger.warning(f"⚠️ 音声 '{candidate}' はテストに失敗")
                 
-                # 候補が見つからない場合は最初の候補を使用
-                logger.warning(f"日本語音声が見つからないため、'{self.voice_candidates[0]}' を使用")
-                return self.voice_candidates[0]
+                # すべてのテストに失敗した場合はデフォルトを使用
+                logger.warning("すべての音声テストに失敗、デフォルト音声 'Kyoko' を使用")
+                return "Kyoko"
             else:
                 logger.warning("音声一覧の取得に失敗、デフォルト音声を使用")
                 return "Kyoko"
@@ -258,6 +346,20 @@ class ZundamonSpeaker:
         except Exception as e:
             logger.warning(f"音声選択エラー: {e}, デフォルト音声を使用")
             return "Kyoko"
+    
+    def test_voice(self, voice: str) -> bool:
+        """音声が正常に動作するかテスト"""
+        try:
+            # 短いテストフレーズで試す
+            test_process = subprocess.run(
+                ["say", "-v", voice, "テスト"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=3
+            )
+            return test_process.returncode == 0
+        except:
+            return False
     
     async def speak_async(self, text: str) -> bool:
         """非同期でセリフを発話（改良版）"""
