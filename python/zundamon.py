@@ -366,36 +366,30 @@ class ZundamonSpeaker:
         logger.info(f"📢 発話開始: '{text}' (音声: {self.voice_name})")
         
         try:
-            # 1. 音声再生を先に開始（バックグラウンド）
+            # 1. 音声再生を並行で開始（完了を待たない）
             logger.info("🔊 音声再生開始...")
             
-            # 音声再生プロセスを非同期で開始
-            audio_task = asyncio.create_task(
-                self._play_audio_async(text)
-            )
+            # 音声再生を真に非同期で開始
+            audio_process = self._start_audio_playback(text)
             
             # 2. 少し待ってから口パクを開始（音声に合わせる）
-            await asyncio.sleep(0.35)  # 音声開始から0.5秒後に口パク開始
+            await asyncio.sleep(0.5)  # 音声開始から0.35秒後に口パク開始
             
             # 3. おしゃべりモード有効化
             if not self.talking_controller.set_talking_mode(True):
                 logger.error("おしゃべりモード有効化失敗")
-                # 音声再生もキャンセル
-                audio_task.cancel()
                 return False
             
             logger.info("🎭 口パク開始")
             
-            # 4. 音声再生の完了を待機
-            actual_duration = await audio_task
+            # 4. 音声再生の完了を待機（推定時間ベース）
+            estimated_duration = self._estimate_speech_duration(text)
             
-            if actual_duration <= 0:
-                logger.error("音声再生に失敗しました")
-                self.talking_controller.set_talking_mode(False)
-                return False
+            # 音声再生時間だけ待機
+            await asyncio.sleep(estimated_duration)
             
             # 5. 再生完了の確認
-            logger.info(f"✅ 音声再生完了 ({actual_duration:.2f}秒)")
+            logger.info(f"✅ 音声再生完了 (推定時間: {estimated_duration:.2f}秒)")
             
             # 6. おしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
@@ -409,21 +403,58 @@ class ZundamonSpeaker:
             self.talking_controller.set_talking_mode(False)
             return False
     
-    async def _play_audio_async(self, text: str) -> float:
-        """音声再生を非同期で実行"""
-        self.audio_player.is_playing = True
+    def _start_audio_playback(self, text: str):
+        """音声再生を真に非同期で開始"""
+        import threading
         
-        # 非同期で音声再生を実行
-        loop = asyncio.get_event_loop()
-        duration = await loop.run_in_executor(
-            None, 
-            self.audio_player.play_say_command, 
-            text, 
-            self.voice_name
-        )
+        def play_audio():
+            self.audio_player.is_playing = True
+            start_time = time.time()
+            try:
+                duration = self.audio_player.play_say_command(text, self.voice_name)
+                actual_time = time.time() - start_time
+                logger.info(f"🔊 実際の音声再生時間: {actual_time:.2f}秒 (関数戻り値: {duration:.2f}秒)")
+                
+                # 実測値を学習データとして保存（将来の改善用）
+                self._record_speech_timing(text, actual_time)
+                
+            except Exception as e:
+                logger.error(f"音声再生エラー: {e}")
+            finally:
+                self.audio_player.is_playing = False
         
-        self.audio_player.is_playing = False
-        return duration
+        # 別スレッドで音声再生を開始
+        thread = threading.Thread(target=play_audio, daemon=True)
+        thread.start()
+        return thread
+    
+    def _record_speech_timing(self, text: str, actual_duration: float):
+        """音声再生時間の実測値を記録（学習用）"""
+        char_count = len(text)
+        if char_count > 0:
+            chars_per_second = char_count / actual_duration
+            logger.debug(f"📊 学習データ: '{text}' → {chars_per_second:.2f}文字/秒")
+    
+    def _estimate_speech_duration(self, text: str) -> float:
+        """発話時間を推定（より正確な計算）"""
+        char_count = len(text)
+        
+        # 日本語の音声合成における実測値ベースの計算
+        # 基本速度：約5文字/秒（macOS say コマンド実測値）
+        base_duration = char_count / 5.0
+        
+        # 句読点や感嘆符による一時停止を考慮
+        punctuation_count = text.count('。') + text.count('！') + text.count('？') + text.count('、')
+        pause_time = punctuation_count * 0.2  # 句読点あたり0.2秒の停止
+        
+        # 計算結果
+        estimated_duration = base_duration + pause_time
+        
+        # 最小0.8秒、最大8秒に制限（より現実的な範囲）
+        final_duration = max(0.8, min(estimated_duration, 8.0))
+        
+        logger.info(f"🎯 推定時間計算: '{text}' ({char_count}文字) → {final_duration:.2f}秒")
+        return final_duration
     
     def speak_sync(self, text: str) -> bool:
         """同期的にセリフを発話"""
