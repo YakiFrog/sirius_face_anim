@@ -1,5 +1,6 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
 import { TalkingMode } from './TalkingMode';
+import { fastWebSocketClient } from './FastWebSocketClient';
 
 export class ROS2Connection {
   private enableRos2Connection: boolean;
@@ -9,10 +10,42 @@ export class ROS2Connection {
   private pollingInterval?: NodeJS.Timeout;
   private isPollingActive: boolean = true;
   private lastTalkingMouthModeState: boolean | null = null;
+  private webSocketConnected: boolean = false;
+  
+  // 使用統計
+  private stats = {
+    webSocketRequests: 0,
+    httpRequests: 0,
+    webSocketSuccesses: 0,
+    httpSuccesses: 0
+  };
 
   constructor(enableRos2Connection: boolean, ros2HttpUrl: string) {
     this.enableRos2Connection = enableRos2Connection;
     this.ros2HttpUrl = ros2HttpUrl;
+    
+    // WebSocket接続状態を監視
+    this.initWebSocketMonitoring();
+  }
+
+  private initWebSocketMonitoring() {
+    // WebSocketからのメッセージを監視
+    fastWebSocketClient.onMessage('expression_changed', (data) => {
+      console.log('🚀 WebSocket: 表情変更受信:', data.expression);
+    });
+    
+    fastWebSocketClient.onMessage('talking_mode_changed', (data) => {
+      console.log('🚀 WebSocket: おしゃべりモード変更受信:', data.enabled);
+    });
+    
+    fastWebSocketClient.onMessage('status', (data) => {
+      console.log('🚀 WebSocket: 状態更新受信:', data);
+    });
+    
+    // 定期的にWebSocket接続状態をチェック
+    setInterval(() => {
+      this.webSocketConnected = fastWebSocketClient.isConnected();
+    }, 1000);
   }
 
   public startConnection(
@@ -65,6 +98,13 @@ export class ROS2Connection {
   ) {
     if (!this.isPollingActive) return;
 
+    // 🚀 WebSocket接続時はHTTPポーリングをスキップ
+    if (this.webSocketConnected) {
+      setIsConnected(true);
+      setConnectionStatus('WebSocket接続中');
+      return;
+    }
+
     // 手動表情変更中または過度なタップ反応中はポーリングをスキップ
     const now = Date.now();
     const isInOverTapReaction = eyeOverTapReactionRef.current &&
@@ -88,7 +128,7 @@ export class ROS2Connection {
           setExpression(newExpression);
         }
         setIsConnected(true);
-        setConnectionStatus('接続中');
+        setConnectionStatus('HTTP接続中');
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -101,6 +141,11 @@ export class ROS2Connection {
 
   private async fetchDisplayMode(displayMode: string, onDisplayModeToggle?: () => void) {
     if (!this.isPollingActive) return;
+
+    // 🚀 WebSocket接続時はHTTPポーリングをスキップ
+    if (this.webSocketConnected) {
+      return;
+    }
 
     try {
       const response = await fetch(`${this.ros2HttpUrl}/display_mode`, {
@@ -124,6 +169,11 @@ export class ROS2Connection {
 
   private async fetchTalkingMouthModeAndControl(talkingMode?: TalkingMode) {
     if (!this.isPollingActive || !talkingMode) return;
+
+    // 🚀 WebSocket接続時はHTTPポーリングをスキップ
+    if (this.webSocketConnected) {
+      return;
+    }
 
     try {
       const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
@@ -165,7 +215,24 @@ export class ROS2Connection {
   public async sendExpressionToRos2(expression: FacialExpression): Promise<void> {
     if (!this.enableRos2Connection) return;
 
+    // 🚀 WebSocket優先で送信
+    if (this.webSocketConnected) {
+      try {
+        this.stats.webSocketRequests++;
+        const success = await fastWebSocketClient.setExpression(expression);
+        if (success) {
+          this.stats.webSocketSuccesses++;
+          console.log(`🚀 WebSocket: 表情 ${expression} 送信成功 (WebSocket: ${this.stats.webSocketSuccesses}/${this.stats.webSocketRequests}, HTTP: ${this.stats.httpSuccesses}/${this.stats.httpRequests})`);
+          return;
+        }
+      } catch (error) {
+        console.warn('WebSocket表情送信失敗、HTTPにフォールバック:', error);
+      }
+    }
+
+    // HTTPフォールバック
     try {
+      this.stats.httpRequests++;
       const response = await fetch(`${this.ros2HttpUrl}/expression`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,6 +243,8 @@ export class ROS2Connection {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      this.stats.httpSuccesses++;
+      console.log(`📡 HTTP: 表情 ${expression} 送信成功 (WebSocket: ${this.stats.webSocketSuccesses}/${this.stats.webSocketRequests}, HTTP: ${this.stats.httpSuccesses}/${this.stats.httpRequests})`);
     } catch (error) {
       console.warn('表情の送信に失敗しました:', error.message);
     }
@@ -203,7 +272,25 @@ export class ROS2Connection {
   // お喋り口モードのオン/オフを設定
   public async setTalkingMouthMode(enable: boolean): Promise<void> {
     if (!this.enableRos2Connection) return;
+    
+    // 🚀 WebSocket優先で送信
+    if (this.webSocketConnected) {
+      try {
+        this.stats.webSocketRequests++;
+        const success = await fastWebSocketClient.setTalkingMode(enable);
+        if (success) {
+          this.stats.webSocketSuccesses++;
+          console.log(`🚀 WebSocket: おしゃべりモード ${enable ? '有効' : '無効'} 送信成功 (WebSocket: ${this.stats.webSocketSuccesses}/${this.stats.webSocketRequests}, HTTP: ${this.stats.httpSuccesses}/${this.stats.httpRequests})`);
+          return;
+        }
+      } catch (error) {
+        console.warn('WebSocketおしゃべりモード送信失敗、HTTPにフォールバック:', error);
+      }
+    }
+    
+    // HTTPフォールバック
     try {
+      this.stats.httpRequests++;
       const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -213,9 +300,24 @@ export class ROS2Connection {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      this.stats.httpSuccesses++;
+      console.log(`📡 HTTP: おしゃべりモード ${enable ? '有効' : '無効'} 送信成功 (WebSocket: ${this.stats.webSocketSuccesses}/${this.stats.webSocketRequests}, HTTP: ${this.stats.httpSuccesses}/${this.stats.httpRequests})`);
     } catch (error) {
       console.warn('お喋り口モード切替失敗:', error.message);
     }
+  }
+
+  // 使用統計を取得
+  public getStats() {
+    const totalRequests = this.stats.webSocketRequests + this.stats.httpRequests;
+    const webSocketRate = totalRequests > 0 ? (this.stats.webSocketRequests / totalRequests * 100).toFixed(1) : '0.0';
+    
+    return {
+      ...this.stats,
+      totalRequests,
+      webSocketRate: `${webSocketRate}%`,
+      webSocketConnected: this.webSocketConnected
+    };
   }
 
   private isValidExpression(exp: string): boolean {

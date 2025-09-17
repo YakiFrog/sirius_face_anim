@@ -310,7 +310,18 @@ def main():
     # コントローラーを初期化
     controller = FaceAnimationController()
     
-    # HTTPサーバーを設定
+    # WebSocketサーバーを開始（低遅延通信用）
+    try:
+        from websocket_server import start_websocket_server
+        start_websocket_server(controller)
+        logger.info("🚀 WebSocketサーバー開始: ws://localhost:8081 (低遅延通信)")
+    except ImportError:
+        logger.warning("⚠️ WebSocketサーバーが利用できません（websocketsパッケージが未インストール）")
+        logger.info("   インストール: pip install websockets")
+    except Exception as e:
+        logger.warning(f"⚠️ WebSocketサーバー開始エラー: {e}")
+    
+    # HTTPサーバーを設定（従来通りの通信用）
     server_address = ('localhost', 8080)
     handler_class = create_handler(controller)
     httpd = HTTPServer(server_address, handler_class)
@@ -330,6 +341,9 @@ def main():
     logger.info("  curl -X POST http://localhost:8080/expression -H 'Content-Type: application/json' -d '{\"expression\": \"happy\"}'")
     logger.info("  curl -X POST http://localhost:8080/talking_mouth_mode -H 'Content-Type: application/json' -d '{\"talking_mouth_mode\": true}'")
     logger.info("  curl http://localhost:8080/expression")
+    logger.info("\n🚀 低遅延通信（推奨）:")
+    logger.info("  WebSocket: ws://localhost:8081")
+    logger.info("  フロントエンドでFastWebSocketClientを使用")
     logger.info("\nサーバー起動後の手動制御:")
     logger.info("  コンソールで 'D' + Enter : お喋りモード切り替え")
     logger.info("  コンソールで '1-9' + Enter : 表情変更")

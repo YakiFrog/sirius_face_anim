@@ -1,4 +1,5 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
+import { fastWebSocketClient } from './FastWebSocketClient';
 
 export class ExpressionManager {
   private manualExpressionRef: React.MutableRefObject<{ isManual: boolean; timeout: NodeJS.Timeout | null }>;
@@ -31,8 +32,18 @@ export class ExpressionManager {
     // 表情を変更
     setExpression(newExpression);
     
-    // ROS2サーバーにも新しい表情を送信
-    this.sendExpressionToRos2(newExpression);
+    // 🚀 WebSocketで超高速表情変更を送信（優先）
+    if (fastWebSocketClient.isConnected()) {
+      fastWebSocketClient.setExpression(newExpression).catch((error) => {
+        console.warn('WebSocket表情変更失敗、HTTPにフォールバック:', error);
+        // WebSocket失敗時はHTTPにフォールバック
+        this.sendExpressionToRos2(newExpression);
+      });
+    } else {
+      // WebSocket未接続時はHTTPを使用
+      console.log('WebSocket未接続、HTTPを使用');
+      this.sendExpressionToRos2(newExpression);
+    }
     
     // 過度なタップ反応中かチェック
     const now = Date.now();

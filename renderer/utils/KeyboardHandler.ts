@@ -18,6 +18,7 @@ export class KeyboardHandler {
   private lastActionTimeRef: React.MutableRefObject<number>;
   private togglePictureInPicture?: () => void;
   private talkingMode: TalkingMode;
+  private ros2Connection?: any; // 統計表示用
 
   constructor(config: {
     displayMode: string;
@@ -35,6 +36,7 @@ export class KeyboardHandler {
     savedMousePositionRef: React.MutableRefObject<{ x: number, y: number } | null>;
     lastActionTimeRef: React.MutableRefObject<number>;
     togglePictureInPicture?: () => void;
+    ros2Connection?: any;
   }) {
     this.displayMode = config.displayMode;
     this.onDisplayModeToggle = config.onDisplayModeToggle;
@@ -51,6 +53,7 @@ export class KeyboardHandler {
     this.savedMousePositionRef = config.savedMousePositionRef;
     this.lastActionTimeRef = config.lastActionTimeRef;
     this.togglePictureInPicture = config.togglePictureInPicture;
+    this.ros2Connection = config.ros2Connection;
     this.talkingMode = new TalkingMode();
   }
 
@@ -73,6 +76,8 @@ export class KeyboardHandler {
       this.handleTalkingModeToggle();
     } else if (p5.key === 'd' || p5.key === 'D') {
       this.handleRandomTalkingModeToggle();
+    } else if (p5.key === 'z' || p5.key === 'Z') {
+      this.handleShowStats();
     } else if (p5.key === '0') {
       this.setManualExpression('pien');
     } else if (this.displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
@@ -135,6 +140,17 @@ export class KeyboardHandler {
   private handleRandomTalkingModeToggle() {
     console.log('Dキー: ランダムおしゃべりモード切り替え');
     this.talkingMode.toggle(true);
+  }
+
+  private handleShowStats() {
+    console.log('Zキー: WebSocket/HTTP使用統計表示');
+    if (this.ros2Connection && this.ros2Connection.getStats) {
+      const stats = this.ros2Connection.getStats();
+      console.log('🔍 通信統計:', stats);
+      console.log(`WebSocket使用率: ${stats.webSocketRate}, 接続状態: ${stats.webSocketConnected ? '接続中' : '切断'}`);
+    } else {
+      console.log('統計情報が利用できません');
+    }
   }
 
   public getTalkingMode(): TalkingMode {

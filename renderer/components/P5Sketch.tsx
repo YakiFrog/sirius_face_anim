@@ -7,6 +7,7 @@ import { EyeTapManager } from '../utils/EyeTapManager';
 import { FaceRenderer } from '../utils/FaceRenderer';
 import { InteractionHandler } from '../utils/InteractionHandler';
 import { KeyboardHandler } from '../utils/KeyboardHandler';
+import { fastWebSocketClient } from '../utils/FastWebSocketClient';
 
 // p5はクライアントサイドでのみ実行されるため、dynamic importを使用
 const Sketch = dynamic(() => import('react-p5').then((mod) => mod.default), {
@@ -368,7 +369,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       ),
       savedMousePositionRef,
       lastActionTimeRef,
-      togglePictureInPicture
+      togglePictureInPicture,
+      ros2Connection: ros2Connection.current // WebSocket統計表示用
     });
   }, []);
 

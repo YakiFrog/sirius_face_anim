@@ -1,7 +1,10 @@
 /**
  * おしゃべりモードの管理クラス
  * Sキーでトリガーされ、口の3パターンを切り替える
+ * WebSocket統合で超高速サーバー通信をサポート
  */
+import { fastWebSocketClient } from './FastWebSocketClient';
+
 export class TalkingMode {
   private isActive: boolean = false;
   private currentMouthPattern: number = 0;
@@ -43,8 +46,28 @@ export class TalkingMode {
     
     console.log(`✨ ${randomMode ? 'ランダム' : '順次'}おしゃべりモード開始`);
     
+    // 🚀 サーバーにおしゃべりモード有効化を超高速送信
+    this.notifyServerTalkingMode(true);
+    
     // 最初のパターン変更をスケジュール
     this.scheduleNextPatternChange();
+  }
+
+  /**
+   * サーバーにおしゃべりモード状態を送信
+   */
+  private async notifyServerTalkingMode(enabled: boolean): Promise<void> {
+    try {
+      if (fastWebSocketClient.isConnected()) {
+        await fastWebSocketClient.setTalkingMode(enabled);
+        console.log(`🚀 WebSocket: おしゃべりモード ${enabled ? '有効化' : '無効化'} 送信完了`);
+      } else {
+        console.log('⚠️ WebSocket未接続、おしゃべりモード通知をスキップ');
+        // HTTPフォールバックが必要な場合はここに実装
+      }
+    } catch (error) {
+      console.error('❌ おしゃべりモード通知エラー:', error);
+    }
   }
 
   /**
@@ -174,6 +197,9 @@ export class TalkingMode {
       clearTimeout(this.stopTimeoutId);
       this.stopTimeoutId = null;
     }
+    
+    // 🚀 サーバーにおしゃべりモード無効化を超高速送信
+    this.notifyServerTalkingMode(false);
     
     console.log('🔇 おしゃべりモード停止');
   }
