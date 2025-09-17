@@ -373,7 +373,7 @@ class ZundamonSpeaker:
             audio_process = self._start_audio_playback(text)
             
             # 2. 少し待ってから口パクを開始（音声に合わせる）
-            await asyncio.sleep(0.5)  # 音声開始から0.35秒後に口パク開始
+            await asyncio.sleep(0.2)  # 音声開始から0.20後に口パク開始
             
             # 3. おしゃべりモード有効化
             if not self.talking_controller.set_talking_mode(True):
