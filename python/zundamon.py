@@ -125,6 +125,69 @@ class AudioPlayer:
     
     def __init__(self):
         self.is_playing = False
+        self.current_process = None  # 現在の音声再生プロセス
+    
+    def stop_audio(self):
+        """現在の音声再生を停止"""
+        try:
+            stopped = False
+            
+            # 1. 現在のプロセスを停止
+            if self.current_process and self.current_process.poll() is None:
+                logger.info("🛑 音声再生を中断中...")
+                self.current_process.terminate()
+                
+                # 少し待ってからkillする（必要に応じて）
+                try:
+                    self.current_process.wait(timeout=0.2)
+                    stopped = True
+                except subprocess.TimeoutExpired:
+                    logger.info("🔨 強制終了中...")
+                    self.current_process.kill()
+                    try:
+                        self.current_process.wait(timeout=0.2)
+                        stopped = True
+                    except subprocess.TimeoutExpired:
+                        logger.warning("⚠️ プロセス強制終了に失敗")
+            
+            # 2. 全ての音声関連プロセスを強制停止（複数回実行）
+            for attempt in range(3):  # 3回試行
+                try:
+                    # より強力な停止（SIGKILLを使用）
+                    subprocess.run(["pkill", "-9", "-f", "say"], timeout=1, capture_output=True)
+                    subprocess.run(["pkill", "-9", "-f", "afplay"], timeout=1, capture_output=True)
+                    # killallも併用
+                    subprocess.run(["killall", "-9", "say"], timeout=1, capture_output=True)
+                    subprocess.run(["killall", "-9", "afplay"], timeout=1, capture_output=True)
+                    
+                    # 短い待機
+                    import time
+                    time.sleep(0.1)
+                    
+                    # プロセスが残っているかチェック
+                    result = subprocess.run(["pgrep", "-f", "say"], capture_output=True)
+                    if result.returncode != 0:  # プロセスが見つからない = 成功
+                        logger.info(f"🧹 音声プロセス強制クリア (試行 {attempt + 1})")
+                        break
+                except Exception:
+                    pass
+            
+            # 3. 追加で少し待機（音声ハードウェアのクリア）
+            import time
+            time.sleep(0.2)
+            
+            if stopped or self.current_process is None:
+                logger.info("✅ 音声再生を中断しました")
+                
+            self.is_playing = False
+            self.current_process = None
+            return True
+            
+        except Exception as e:
+            logger.error(f"音声停止エラー: {e}")
+            self.is_playing = False
+            self.current_process = None
+            return False
     
     def play_audio_data(self, audio_data: bytes, file_format: str = "wav") -> float:
         """音声データを再生し、再生時間を返す"""
@@ -157,7 +220,7 @@ class AudioPlayer:
                 pass
     
     def play_say_command(self, text: str, voice: str = "Kyoko") -> float:
-        """say コマンドで音声再生（改良版 - 音声途切れ対策）"""
+        """say コマンドで音声再生（改良版 - 音声途切れ対策 + 中断対応）"""
         try:
             # 推定再生時間を計算
             estimated_duration = len(text) / 4  # 2文字/秒（保守的）
@@ -179,7 +242,7 @@ class AudioPlayer:
                     start_time = time.time()
                     
                     # より安定した実行方法：Popenを使用して完了を待機
-                    process = subprocess.Popen(
+                    self.current_process = subprocess.Popen(
                         ["say", "-v", current_voice, text],  # -rパラメータを削除（問題の原因の可能性）
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.PIPE,
@@ -188,22 +251,23 @@ class AudioPlayer:
                     
                     # プロセスの完了を待機（タイムアウト付き）
                     try:
-                        stdout, stderr = process.communicate(timeout=max(min_duration * 2, 15))
+                        stdout, stderr = self.current_process.communicate(timeout=max(min_duration * 2, 15))
                         actual_duration = time.time() - start_time
                         
-                        if process.returncode == 0:
+                        if self.current_process.returncode == 0:
                             logger.info(f"✅ 音声再生成功 (時間: {actual_duration:.2f}秒, 推定: {min_duration:.2f}秒")
                             self.is_playing = False
+                            self.current_process = None
                             return actual_duration
                         else:
-                            logger.warning(f"⚠️ 音声 '{current_voice}' で失敗: return code {process.returncode}")
+                            logger.warning(f"⚠️ 音声 '{current_voice}' で失敗: return code {self.current_process.returncode}")
                             if stderr:
                                 logger.warning(f"エラー詳細: {stderr}")
                             continue  # 次の音声を試す
                             
                     except subprocess.TimeoutExpired:
                         logger.warning(f"⚠️ 音声 '{current_voice}' でタイムアウト")
-                        process.kill()
+                        self.current_process.kill()
                         continue  # 次の音声を試す
                         
                 except Exception as e:
@@ -215,15 +279,18 @@ class AudioPlayer:
             file_duration = self.play_say_command_with_file(text, voice)
             if file_duration > 0:
                 self.is_playing = False
+                self.current_process = None
                 return file_duration
             
             logger.error("❌ すべての音声再生方法で失敗しました")
             self.is_playing = False
+            self.current_process = None
             return 0.0
             
         except Exception as e:
             logger.error(f"❌ 音声再生エラー: {e}")
             self.is_playing = False
+            self.current_process = None
             return 0.0
             
     def play_say_command_with_file(self, text: str, voice: str = "Kyoko") -> float:
@@ -238,44 +305,64 @@ class AudioPlayer:
             
             # 音声ファイルを生成
             start_time = time.time()
-            generate_result = subprocess.run(
+            generate_process = subprocess.Popen(
                 ["say", "-v", voice, "-o", temp_path, text],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                timeout=10,
                 text=True
             )
             
-            if generate_result.returncode != 0:
-                logger.error(f"音声ファイル生成失敗: {generate_result.stderr}")
+            # プロセスを保存して中断可能にする
+            self.current_process = generate_process
+            
+            try:
+                stdout, stderr = generate_process.communicate(timeout=10)
+                if generate_process.returncode != 0:
+                    logger.error(f"音声ファイル生成失敗: {stderr}")
+                    return 0.0
+            except subprocess.TimeoutExpired:
+                generate_process.kill()
+                logger.error("音声ファイル生成タイムアウト")
                 return 0.0
             
             # 音声ファイルを再生
-            play_result = subprocess.run(
+            play_process = subprocess.Popen(
                 ["afplay", temp_path],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                timeout=15,
                 text=True
             )
             
-            actual_duration = time.time() - start_time
+            # 再生プロセスを保存
+            self.current_process = play_process
+            
+            try:
+                stdout, stderr = play_process.communicate(timeout=15)
+                actual_duration = time.time() - start_time
+                
+                if play_process.returncode == 0:
+                    logger.info(f"✅ 音声ファイル経由で再生成功 (時間: {actual_duration:.2f}秒)")
+                    self.current_process = None
+                    return actual_duration
+                else:
+                    logger.error(f"音声ファイル再生失敗: {stderr}")
+                    self.current_process = None
+                    return 0.0
+            except subprocess.TimeoutExpired:
+                play_process.kill()
+                logger.error("音声ファイル再生タイムアウト")
+                self.current_process = None
+                return 0.0
             
             # 一時ファイルを削除
             try:
                 os.unlink(temp_path)
             except:
                 pass
-            
-            if play_result.returncode == 0:
-                logger.info(f"✅ 音声ファイル経由で再生成功 (時間: {actual_duration:.2f}秒)")
-                return actual_duration
-            else:
-                logger.error(f"音声ファイル再生失敗: {play_result.stderr}")
-                return 0.0
                 
         except Exception as e:
             logger.error(f"音声ファイル再生エラー: {e}")
+            self.current_process = None
             return 0.0
     
     def _get_audio_duration(self, file_path: str) -> float:
@@ -304,12 +391,46 @@ class ZundamonSpeaker:
     def __init__(self, server_url="http://localhost:8080"):
         self.talking_controller = TalkingModeController(server_url)
         self.audio_player = AudioPlayer()
+        self.is_speaking = False  # 発話中フラグ
+        self.current_audio_thread = None  # 現在の音声再生スレッド
+        self._speech_lock = threading.Lock()  # 発話制御用ロック
         
         # 音声設定（日本語対応音声を優先的に試す）
         self.voice_candidates = ["Kyoko", "Eddy (日本語（日本）)", "Reed (日本語（日本）)", "Flo (日本語（日本）)"]
         self.voice_name = "Eddy (日本語（日本）)"  # 初期値
         
         logger.info(f"🎤 選択された音声: {self.voice_name}")
+    
+    def stop_speaking(self):
+        """現在の発話を停止"""
+        with self._speech_lock:  # ロックを取得して排他制御
+            try:
+                if self.is_speaking:
+                    logger.info("🛑 発話を中断中...")
+                    
+                    # 1. フラグを即座にオフ（新しい音声開始を防ぐ）
+                    self.is_speaking = False
+                    
+                    # 2. 音声再生を停止
+                    self.audio_player.stop_audio()
+                    
+                    # 3. おしゃべりモードを無効化
+                    self.talking_controller.set_talking_mode(False)
+                    
+                    # 4. スレッドをクリア
+                    self.current_audio_thread = None
+                    
+                    # 5. 少し待機してプロセスが確実に終了するまで待つ
+                    import time
+                    time.sleep(0.3)  # 300ms待機（より長めに）
+                    
+                    logger.info("✅ 発話を中断しました")
+                    return True
+                return True
+            except Exception as e:
+                logger.error(f"発話停止エラー: {e}")
+                self.is_speaking = False
+                return False
     
     def select_best_voice(self) -> str:
         """利用可能な最適な日本語音声を選択（改良版）"""
@@ -362,22 +483,42 @@ class ZundamonSpeaker:
             return False
     
     async def speak_async(self, text: str) -> bool:
-        """非同期でセリフを発話（改良版 - 口パクと音声の同期）"""
-        logger.info(f"📢 発話開始: '{text}' (音声: {self.voice_name})")
+        """非同期でセリフを発話（改良版 - 排他制御付き）"""
+        
+        # 発話処理全体をロックで保護
+        if not self._speech_lock.acquire(blocking=False):
+            logger.info("🛑 他の発話が進行中のため、この発話をスキップ")
+            return False
         
         try:
+            # 前の発話を停止（ロック内で実行）
+            if self.is_speaking:
+                logger.info("🛑 前の発話を中断して新しい発話を開始")
+                self._force_stop_speaking()  # ロック内専用メソッド
+            
+            logger.info(f"📢 発話開始: '{text}' (音声: {self.voice_name})")
+            
+            self.is_speaking = True
+            
             # 1. 音声再生を並行で開始（完了を待たない）
             logger.info("🔊 音声再生開始...")
             
             # 音声再生を真に非同期で開始
-            audio_process = self._start_audio_playback(text)
+            audio_thread = self._start_audio_playback(text)
+            self.current_audio_thread = audio_thread
             
             # 2. 少し待ってから口パクを開始（音声に合わせる）
             await asyncio.sleep(0.2)  # 音声開始から0.20後に口パク開始
             
+            # 中断チェック
+            if not self.is_speaking:
+                logger.info("🛑 発話開始時に中断されました")
+                return False
+            
             # 3. おしゃべりモード有効化
             if not self.talking_controller.set_talking_mode(True):
                 logger.error("おしゃべりモード有効化失敗")
+                self.is_speaking = False
                 return False
             
             logger.info("🎭 口パク開始")
@@ -385,41 +526,98 @@ class ZundamonSpeaker:
             # 4. 音声再生の完了を待機（推定時間ベース）
             estimated_duration = self._estimate_speech_duration(text)
             
-            # 音声再生時間だけ待機
-            await asyncio.sleep(estimated_duration)
+            # 音声再生時間だけ待機（中断チェック付き）
+            check_interval = 0.1  # 100msごとにチェック
+            elapsed_time = 0.0
+            
+            while elapsed_time < estimated_duration and self.is_speaking:
+                await asyncio.sleep(check_interval)
+                elapsed_time += check_interval
             
             # 5. 再生完了の確認
-            logger.info(f"✅ 音声再生完了 (推定時間: {estimated_duration:.2f}秒)")
+            was_speaking = self.is_speaking
+            if was_speaking:
+                logger.info(f"✅ 音声再生完了 (推定時間: {estimated_duration:.2f}秒)")
             
             # 6. おしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
+            self.is_speaking = False
             
-            logger.info("✅ 発話完了")
+            if was_speaking:
+                logger.info("✅ 発話完了")
+            else:
+                logger.info("🛑 発話が中断されました")
             return True
             
         except Exception as e:
             logger.error(f"発話エラー: {e}")
             # エラーが発生した場合は必ずおしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
+            self.is_speaking = False
             return False
+        finally:
+            # 必ずロックを解放
+            self._speech_lock.release()
+    
+    def _force_stop_speaking(self):
+        """ロック内での強制停止（ロック再取得なし）"""
+        try:
+            if self.is_speaking:
+                # 1. フラグを即座にオフ
+                self.is_speaking = False
+                
+                # 2. 音声再生を停止
+                self.audio_player.stop_audio()
+                
+                # 3. おしゃべりモードを無効化
+                self.talking_controller.set_talking_mode(False)
+                
+                # 4. スレッドをクリア
+                self.current_audio_thread = None
+                
+                # 5. 待機
+                import time
+                time.sleep(0.3)
+                
+        except Exception as e:
+            logger.error(f"強制停止エラー: {e}")
+            self.is_speaking = False
     
     def _start_audio_playback(self, text: str):
         """音声再生を真に非同期で開始"""
         import threading
         
         def play_audio():
+            # 発話中断チェック
+            if not self.is_speaking:
+                logger.info("🛑 音声スレッド: 開始前に中断")
+                return
+                
             self.audio_player.is_playing = True
             start_time = time.time()
             try:
+                # 音声再生開始前にもう一度中断チェック
+                if not self.is_speaking:
+                    logger.info("🛑 音声スレッド: 再生開始前に中断")
+                    return
+                
+                # 音声再生中も定期的に中断チェック
                 duration = self.audio_player.play_say_command(text, self.voice_name)
                 actual_time = time.time() - start_time
-                logger.info(f"🔊 実際の音声再生時間: {actual_time:.2f}秒 (関数戻り値: {duration:.2f}秒)")
                 
-                # 実測値を学習データとして保存（将来の改善用）
-                self._record_speech_timing(text, actual_time)
+                # 中断されていない場合のみログ出力
+                if self.is_speaking:
+                    logger.info(f"🔊 実際の音声再生時間: {actual_time:.2f}秒 (関数戻り値: {duration:.2f}秒)")
+                    # 実測値を学習データとして保存（将来の改善用）
+                    self._record_speech_timing(text, actual_time)
+                else:
+                    logger.info("🛑 音声再生が中断されました")
                 
             except Exception as e:
-                logger.error(f"音声再生エラー: {e}")
+                if self.is_speaking:
+                    logger.error(f"音声再生エラー: {e}")
+                else:
+                    logger.info("🛑 音声再生が中断されました（例外）")
             finally:
                 self.audio_player.is_playing = False
         
@@ -491,6 +689,7 @@ class ZundamonConsole:
         logger.info("  D: デモ（複数セリフ連続再生）")
         logger.info("  V: 音声テスト（say コマンド直接実行）")
         logger.info("  S: 状態表示")
+        logger.info("  I: 発話中断")
         logger.info("  H: ヘルプ表示")
         logger.info("  Q: 終了")
     
@@ -523,7 +722,16 @@ class ZundamonConsole:
         logger.info("📊 現在の状態:")
         logger.info(f"  おしゃべりモード: {'有効' if self.speaker.talking_controller.is_talking_mode_active else '無効'}")
         logger.info(f"  音声再生中: {'はい' if self.speaker.audio_player.is_playing else 'いいえ'}")
+        logger.info(f"  発話中: {'はい' if self.speaker.is_speaking else 'いいえ'}")
         logger.info(f"  音声: {self.speaker.voice_name}")
+    
+    def interrupt_current_speech(self):
+        """現在の発話を中断"""
+        if self.speaker.is_speaking:
+            logger.info("🛑 現在の発話を中断します...")
+            self.speaker.stop_speaking()
+        else:
+            logger.info("現在発話していません")
     
     async def demo_mode(self):
         """デモモード"""
@@ -540,6 +748,8 @@ class ZundamonConsole:
     
     def start(self):
         """コンソール開始"""
+        import threading
+        
         self.is_running = True
         logger.info("🤖 ずんだもん音声合成システム起動")
         self.show_help()
@@ -550,27 +760,30 @@ class ZundamonConsole:
                     command = input("\n> ").strip().upper()
                     
                     if command == "1":
-                        self.speaker.speak_sync("今日もお疲れ様なのだ！")
+                        # 非ブロッキングで発話開始
+                        threading.Thread(target=lambda: self.speaker.speak_sync("今日もお疲れ様なのだ！"), daemon=True).start()
                     elif command == "2":
-                        self.speaker.speak_sync("ずんだもんだよ〜")
+                        threading.Thread(target=lambda: self.speaker.speak_sync("ずんだもんだよ〜"), daemon=True).start()
                     elif command == "3":
-                        self.speaker.speak_sync("おはようございます！")
+                        threading.Thread(target=lambda: self.speaker.speak_sync("おはようございます！"), daemon=True).start()
                     elif command == "4":
-                        self.speaker.speak_sync("お疲れ様でした！")
+                        threading.Thread(target=lambda: self.speaker.speak_sync("お疲れ様でした！"), daemon=True).start()
                     elif command == "5":
-                        self.speaker.speak_sync("また明日ね〜")
+                        threading.Thread(target=lambda: self.speaker.speak_sync("また明日ね〜"), daemon=True).start()
                     elif command == "C":
                         custom_text = input("発話させたいテキストを入力してください: ").strip()
                         if custom_text:
-                            self.speaker.speak_sync(custom_text)
+                            threading.Thread(target=lambda: self.speaker.speak_sync(custom_text), daemon=True).start()
                         else:
                             logger.warning("テキストが入力されませんでした")
                     elif command == "D":
-                        asyncio.run(self.demo_mode())
+                        threading.Thread(target=lambda: asyncio.run(self.demo_mode()), daemon=True).start()
                     elif command == "V":
                         self.test_voice_command()
                     elif command == "S":
                         self.show_status()
+                    elif command == "I":
+                        self.interrupt_current_speech()
                     elif command == "H":
                         self.show_help()
                     elif command == "Q":
@@ -587,6 +800,7 @@ class ZundamonConsole:
                     
         finally:
             # 終了時におしゃべりモードを確実にオフ
+            self.speaker.stop_speaking()
             self.speaker.talking_controller.set_talking_mode(False)
 
 def main():
