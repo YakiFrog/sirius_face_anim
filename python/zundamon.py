@@ -1,0 +1,456 @@
+#!/usr/bin/env python3
+"""
+ずんだもん音声合成 + リップシンク同期システム
+セリフを音声合成で再生し、再生時間に合わせて自動的にリップシンクを制御
+"""
+
+import asyncio
+import threading
+import time
+import requests
+import json
+import logging
+from typing import Optional, Dict, Any
+import subprocess
+import os
+import tempfile
+from pathlib import Path
+
+# ログ設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class TalkingModeController:
+    """おしゃべりモード制御クラス"""
+    
+    def __init__(self, server_url="http://localhost:8080"):
+        self.server_url = server_url
+        self.is_talking_mode_active = False
+        self.session = requests.Session()
+        self.session.headers.update({'Content-Type': 'application/json'})
+    
+    def set_talking_mode(self, enabled: bool) -> bool:
+        """おしゃべりモードを設定"""
+        if self.is_talking_mode_active == enabled:
+            logger.info(f"🎭 おしゃべりモード: 既に{'有効' if enabled else '無効'}です")
+            return True  # 状態が同じ場合は何もしない
+        
+        try:
+            logger.info(f"🎭 おしゃべりモード切り替え: {'有効' if enabled else '無効'}に変更中...")
+            response = self.session.post(
+                f"{self.server_url}/talking_mouth_mode",
+                json={'talking_mouth_mode': enabled},
+                timeout=3
+            )
+            
+            if response.status_code == 200:
+                self.is_talking_mode_active = enabled
+                status = "有効" if enabled else "無効"
+                logger.info(f"✅ おしゃべりモード: {status}")
+                return True
+            else:
+                logger.error(f"❌ HTTP エラー: {response.status_code}, レスポンス: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ おしゃべりモード設定エラー: {e}")
+            return False
+
+class VoiceSynthesizer:
+    """音声合成クラス（複数のエンジンに対応）"""
+    
+    def __init__(self, engine="voicevox"):
+        self.engine = engine
+        self.voicevox_url = "http://localhost:50021"  # VOICEVOX API
+        
+    def synthesize_voicevox(self, text: str, speaker_id: int = 3) -> Optional[bytes]:
+        """VOICEVOX で音声合成"""
+        try:
+            # 音声クエリ作成
+            query_response = requests.post(
+                f"{self.voicevox_url}/audio_query",
+                params={"text": text, "speaker": speaker_id},
+                timeout=10
+            )
+            
+            if query_response.status_code != 200:
+                logger.error(f"音声クエリ作成失敗: {query_response.status_code}")
+                return None
+            
+            # 音声合成
+            synthesis_response = requests.post(
+                f"{self.voicevox_url}/synthesis",
+                params={"speaker": speaker_id},
+                headers={"Content-Type": "application/json"},
+                data=query_response.content,
+                timeout=10
+            )
+            
+            if synthesis_response.status_code == 200:
+                return synthesis_response.content
+            else:
+                logger.error(f"音声合成失敗: {synthesis_response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"VOICEVOX 音声合成エラー: {e}")
+            return None
+    
+    def synthesize_say(self, text: str, voice: str = "Kyoko") -> bool:
+        """macOS の say コマンドで音声合成"""
+        try:
+            # say コマンドを使用（バックグラウンド実行）
+            process = subprocess.Popen(
+                ["say", "-v", voice, text],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return process
+        except Exception as e:
+            logger.error(f"say コマンドエラー: {e}")
+            return None
+    
+    def estimate_duration(self, text: str, speech_rate: float = 3.5) -> float:
+        """テキストから推定発話時間を計算（秒）- より正確な計算"""
+        # 日本語の場合：文字数 × 0.28秒程度（より正確）
+        char_count = len(text)
+        estimated_duration = char_count / speech_rate
+        
+        # 最小時間の設定
+        min_duration = 0.5
+        return max(estimated_duration, min_duration)
+
+class AudioPlayer:
+    """音声再生クラス"""
+    
+    def __init__(self):
+        self.is_playing = False
+    
+    def play_audio_data(self, audio_data: bytes, file_format: str = "wav") -> float:
+        """音声データを再生し、再生時間を返す"""
+        try:
+            # 一時ファイルに保存
+            with tempfile.NamedTemporaryFile(suffix=f".{file_format}", delete=False) as temp_file:
+                temp_file.write(audio_data)
+                temp_path = temp_file.name
+            
+            # 音声ファイルの長さを取得
+            duration = self._get_audio_duration(temp_path)
+            
+            # 音声再生
+            self.is_playing = True
+            if os.system(f"afplay '{temp_path}' &") == 0:
+                logger.info(f"🔊 音声再生開始 (推定時間: {duration:.2f}秒)")
+                return duration
+            else:
+                logger.error("音声再生失敗")
+                return 0.0
+                
+        except Exception as e:
+            logger.error(f"音声再生エラー: {e}")
+            return 0.0
+        finally:
+            # 一時ファイルを削除
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+    
+    def play_say_command(self, text: str, voice: str = "Kyoko") -> float:
+        """say コマンドで音声再生（同期実行）- 改良版"""
+        try:
+            # 推定再生時間を計算（より保守的に）
+            estimated_duration = len(text) / 3  # 2.5文字/秒（ゆっくり目）
+            min_duration = max(estimated_duration, 3.0)  # 最低2秒
+            
+            # say コマンドで再生（より安全な設定）
+            start_time = time.time()
+            result = subprocess.run(
+                ["say", "-v", voice, "-r", "180", text],  # -r 180で読み上げ速度を指定（180wpm）
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,  # エラー出力をキャプチャ
+                timeout=max(min_duration * 3, 20),  # より長いタイムアウト
+                text=True
+            )
+            actual_duration = time.time() - start_time
+            
+            self.is_playing = False  # 再生完了
+            
+            if result.returncode == 0:
+                logger.info(f"🔊 音声再生完了 (実際の時間: {actual_duration:.2f}秒, 推定: {estimated_duration:.2f}秒)")
+                return actual_duration
+            else:
+                logger.error(f"say コマンド実行失敗: return code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"エラー詳細: {result.stderr}")
+                return 0.0
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"音声再生がタイムアウトしました (制限時間: {max(min_duration * 3, 20):.2f}秒)")
+            return 0.0
+        except Exception as e:
+            logger.error(f"say コマンド再生エラー: {e}")
+            return 0.0
+    
+    def _get_audio_duration(self, file_path: str) -> float:
+        """音声ファイルの長さを取得"""
+        try:
+            # ffprobe を使って音声の長さを取得
+            result = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", 
+                 "-of", "csv=p=0", file_path],
+                capture_output=True, text=True, timeout=5
+            )
+            
+            if result.returncode == 0:
+                return float(result.stdout.strip())
+            else:
+                # fallback: 推定計算
+                return 2.0
+                
+        except Exception:
+            # ffprobe が使えない場合は推定値を返す
+            return 2.0
+
+class ZundamonSpeaker:
+    """ずんだもん発話システム"""
+    
+    def __init__(self, server_url="http://localhost:8080"):
+        self.talking_controller = TalkingModeController(server_url)
+        self.audio_player = AudioPlayer()
+        
+        # 音声設定（日本語対応音声を優先的に試す）
+        self.voice_candidates = ["Kyoko", "Otoya", "Yuna", "Haruka", "Karen"]  # 日本語音声候補
+        self.voice_name = self.select_best_voice()
+        
+        logger.info(f"🎤 選択された音声: {self.voice_name}")
+    
+    def select_best_voice(self) -> str:
+        """利用可能な最適な日本語音声を選択"""
+        try:
+            # 利用可能な音声一覧を取得
+            result = subprocess.run(
+                ["say", "-v", "?"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                available_voices = result.stdout
+                logger.info("📋 利用可能な音声:")
+                
+                # 候補の音声から利用可能なものを探す
+                for candidate in self.voice_candidates:
+                    if candidate in available_voices:
+                        # 日本語対応かチェック
+                        if "ja_JP" in available_voices or "Japanese" in available_voices:
+                            logger.info(f"✅ 日本語音声 '{candidate}' を選択")
+                            return candidate
+                
+                # 候補が見つからない場合は最初の候補を使用
+                logger.warning(f"日本語音声が見つからないため、'{self.voice_candidates[0]}' を使用")
+                return self.voice_candidates[0]
+            else:
+                logger.warning("音声一覧の取得に失敗、デフォルト音声を使用")
+                return "Kyoko"
+                
+        except Exception as e:
+            logger.warning(f"音声選択エラー: {e}, デフォルト音声を使用")
+            return "Kyoko"
+    
+    async def speak_async(self, text: str) -> bool:
+        """非同期でセリフを発話（改良版）"""
+        logger.info(f"📢 発話開始: '{text}' (音声: {self.voice_name})")
+        
+        try:
+            # 1. おしゃべりモードをオン
+            if not self.talking_controller.set_talking_mode(True):
+                logger.error("おしゃべりモード有効化失敗")
+                return False
+            
+            # モード切り替えを確実にする
+            await asyncio.sleep(0.2)
+            
+            # 2. 音声再生（同期処理）
+            logger.info("🔊 音声再生開始...")
+            self.audio_player.is_playing = True
+            actual_duration = self.audio_player.play_say_command(text, self.voice_name)
+            
+            if actual_duration <= 0:
+                logger.error("音声再生に失敗しました")
+                self.talking_controller.set_talking_mode(False)
+                return False
+            
+            # 3. 再生完了の確認
+            logger.info(f"✅ 音声再生完了 ({actual_duration:.2f}秒)")
+            
+            # 4. 余裕を持たせてからおしゃべりモードをオフ
+            await asyncio.sleep(0.5)  # 少し長めに待機
+            self.talking_controller.set_talking_mode(False)
+            
+            logger.info("✅ 発話完了")
+            return True
+            
+        except Exception as e:
+            logger.error(f"発話エラー: {e}")
+            # エラーが発生した場合は必ずおしゃべりモードをオフ
+            self.talking_controller.set_talking_mode(False)
+            return False
+    
+    def speak_sync(self, text: str) -> bool:
+        """同期的にセリフを発話"""
+        return asyncio.run(self.speak_async(text))
+    
+    async def speak_multiple_async(self, texts: list, interval: float = 1.0):
+        """複数のセリフを順次発話"""
+        for i, text in enumerate(texts):
+            logger.info(f"🎭 セリフ {i+1}/{len(texts)}")
+            await self.speak_async(text)
+            
+            # 最後のセリフでなければ間隔を空ける
+            if i < len(texts) - 1:
+                logger.info(f"⏸️  間隔: {interval}秒")
+                await asyncio.sleep(interval)
+
+class ZundamonConsole:
+    """ずんだもんコンソール操作"""
+    
+    def __init__(self, server_url="http://localhost:8080"):
+        self.speaker = ZundamonSpeaker(server_url)
+        self.is_running = False
+    
+    def show_help(self):
+        """ヘルプ表示"""
+        logger.info("🤖 ずんだもん音声合成システム")
+        logger.info("利用可能なコマンド:")
+        logger.info("  1: '今日もお疲れ様なのだ！'")
+        logger.info("  2: 'ずんだもんだよ〜'")
+        logger.info("  3: 'おはようございます！'")
+        logger.info("  4: 'お疲れ様でした！'")
+        logger.info("  5: 'また明日ね〜'")
+        logger.info("  C: カスタムテキスト入力")
+        logger.info("  D: デモ（複数セリフ連続再生）")
+        logger.info("  V: 音声テスト（say コマンド直接実行）")
+        logger.info("  S: 状態表示")
+        logger.info("  H: ヘルプ表示")
+        logger.info("  Q: 終了")
+    
+    def test_voice_command(self):
+        """音声コマンドのテスト"""
+        test_text = "これは音声テストです。"
+        logger.info(f"🔧 音声コマンドテスト: '{test_text}'")
+        logger.info(f"使用音声: {self.speaker.voice_name}")
+        
+        try:
+            # 直接 say コマンドを実行してテスト
+            result = subprocess.run(
+                ["say", "-v", self.speaker.voice_name, "-r", "180", test_text],
+                timeout=10,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                logger.info("✅ 音声コマンドテスト成功")
+            else:
+                logger.error(f"❌ 音声コマンドテストエラー: return code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"エラー詳細: {result.stderr}")
+        except Exception as e:
+            logger.error(f"音声テストエラー: {e}")
+    
+    def show_status(self):
+        """状態表示"""
+        logger.info("📊 現在の状態:")
+        logger.info(f"  おしゃべりモード: {'有効' if self.speaker.talking_controller.is_talking_mode_active else '無効'}")
+        logger.info(f"  音声再生中: {'はい' if self.speaker.audio_player.is_playing else 'いいえ'}")
+        logger.info(f"  音声: {self.speaker.voice_name}")
+    
+    async def demo_mode(self):
+        """デモモード"""
+        demo_texts = [
+            "今日もお疲れ様なのだ！",
+            "ずんだもんだよ〜",
+            "みんなで一緒に頑張るのだ！",
+            "また明日ね〜"
+        ]
+        
+        logger.info("🎭 デモモード開始")
+        await self.speaker.speak_multiple_async(demo_texts, interval=1.5)
+        logger.info("🎭 デモモード終了")
+    
+    def start(self):
+        """コンソール開始"""
+        self.is_running = True
+        logger.info("🤖 ずんだもん音声合成システム起動")
+        self.show_help()
+        
+        try:
+            while self.is_running:
+                try:
+                    command = input("\n> ").strip().upper()
+                    
+                    if command == "1":
+                        self.speaker.speak_sync("今日もお疲れ様なのだ！")
+                    elif command == "2":
+                        self.speaker.speak_sync("ずんだもんだよ〜")
+                    elif command == "3":
+                        self.speaker.speak_sync("おはようございます！")
+                    elif command == "4":
+                        self.speaker.speak_sync("お疲れ様でした！")
+                    elif command == "5":
+                        self.speaker.speak_sync("また明日ね〜")
+                    elif command == "C":
+                        custom_text = input("発話させたいテキストを入力してください: ").strip()
+                        if custom_text:
+                            self.speaker.speak_sync(custom_text)
+                        else:
+                            logger.warning("テキストが入力されませんでした")
+                    elif command == "D":
+                        asyncio.run(self.demo_mode())
+                    elif command == "V":
+                        self.test_voice_command()
+                    elif command == "S":
+                        self.show_status()
+                    elif command == "H":
+                        self.show_help()
+                    elif command == "Q":
+                        self.is_running = False
+                        logger.info("👋 システム終了")
+                    else:
+                        logger.warning("無効なコマンドです。'H'でヘルプを表示")
+                        
+                except KeyboardInterrupt:
+                    self.is_running = False
+                    logger.info("\n👋 システム終了")
+                except Exception as e:
+                    logger.error(f"コマンド実行エラー: {e}")
+                    
+        finally:
+            # 終了時におしゃべりモードを確実にオフ
+            self.speaker.talking_controller.set_talking_mode(False)
+
+def main():
+    """メイン関数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='ずんだもん音声合成 + リップシンク同期システム')
+    parser.add_argument('--server', default='http://localhost:8080',
+                       help='HTTPサーバーのURL (デフォルト: http://localhost:8080)')
+    parser.add_argument('--text', type=str,
+                       help='発話させるテキスト（指定した場合はコンソールモードをスキップ）')
+    
+    args = parser.parse_args()
+    
+    if args.text:
+        # テキスト指定がある場合は一回だけ発話
+        speaker = ZundamonSpeaker(args.server)
+        speaker.speak_sync(args.text)
+    else:
+        # コンソールモード
+        console = ZundamonConsole(args.server)
+        console.start()
+
+if __name__ == "__main__":
+    main()

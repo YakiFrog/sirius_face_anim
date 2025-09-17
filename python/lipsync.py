@@ -22,11 +22,11 @@ class AudioAnalyzer:
     """音声解析クラス"""
     
     def __init__(self, 
-                 sample_rate=44100,
-                 chunk_size=512,  # より小さなチャンクで反応を早く
-                 threshold=0.005,  # 閾値を下げて感度アップ
-                 min_speaking_duration=0.05,  # 最小話し続け時間を短縮
-                 silence_timeout=0.3):  # 無音タイムアウトも短縮
+                 sample_rate=16000,  # より低いサンプリングレートで超高速化
+                 chunk_size=128,     # 最小チャンクサイズ
+                 threshold=0.003,    # より低い閾値
+                 min_speaking_duration=0.01,  # 最短話し続け時間
+                 silence_timeout=0.03):  # 超短い無音タイムアウト
         """
         初期化
         
@@ -43,6 +43,12 @@ class AudioAnalyzer:
         self.min_speaking_duration = min_speaking_duration
         self.silence_timeout = silence_timeout
         
+        # 高速化のためのプリコンパイル値
+        self.threshold_x_0_7 = threshold * 0.7
+        self.threshold_x_1_2 = threshold * 1.2
+        self.threshold_x_0_8 = threshold * 0.8
+        self.threshold_x_0_5 = threshold * 0.5
+        
         # PyAudio初期化
         self.audio = pyaudio.PyAudio()
         self.stream = None
@@ -51,9 +57,10 @@ class AudioAnalyzer:
         self.is_speaking = False
         self.speaking_start_time = None
         self.last_sound_time = None
-        self.volume_history = deque(maxlen=50)  # 履歴を増やす
+        self.volume_history = deque(maxlen=3)  # 最小限の履歴で高速化
         self.noise_level = 0.0  # ノイズレベル
         self.adaptive_threshold = threshold  # 適応的閾値
+        self.noise_samples = deque(maxlen=10)  # ノイズサンプル数を削減
         
         # コールバック関数
         self.on_speaking_start = None
@@ -69,7 +76,7 @@ class AudioAnalyzer:
         self.on_speaking_stop = on_speaking_stop
     
     def calculate_volume(self, audio_data):
-        """音量レベルを計算"""
+        """音量レベルを計算（超高速版）"""
         try:
             # numpy配列に変換
             audio_np = np.frombuffer(audio_data, dtype=np.int16)
@@ -78,8 +85,8 @@ class AudioAnalyzer:
             if len(audio_np) == 0:
                 return 0.0
             
-            # RMS (Root Mean Square) を計算
-            mean_square = np.mean(audio_np.astype(np.float64)**2)
+            # RMS (Root Mean Square) を計算（高速版）
+            mean_square = np.mean(audio_np.astype(np.float32)**2)
             
             # 負の値やNaNをチェック
             if mean_square < 0 or np.isnan(mean_square):
@@ -91,6 +98,10 @@ class AudioAnalyzer:
             normalized_volume = min(rms / 32767.0, 1.0)
             
             # NaNや無限大値をチェック
+            if np.isnan(normalized_volume) or np.isinf(normalized_volume):
+                return 0.0
+                
+            return normalized_volume
             if np.isnan(normalized_volume) or np.isinf(normalized_volume):
                 return 0.0
                 
@@ -109,47 +120,66 @@ class AudioAnalyzer:
         self.volume_history.append(volume)
         
         # 移動平均を計算（ノイズ除去）
-        if len(self.volume_history) > 0:
-            avg_volume = sum(self.volume_history) / len(self.volume_history)
+        if len(self.volume_history) > 3:  # 最低3サンプルで計算開始
+            avg_volume = sum(self.volume_history[-5:]) / min(5, len(self.volume_history))  # 直近5サンプルの平均
             
             # ノイズレベルを更新（低い音量の平均）
             low_volumes = [v for v in self.volume_history if v < self.threshold]
             if low_volumes:
                 self.noise_level = sum(low_volumes) / len(low_volumes)
-                # 適応的閾値を設定（ノイズレベルの1.5-2倍に下げて感度アップ）
-                self.adaptive_threshold = max(self.threshold, self.noise_level * 1.8)
+                # 適応的閾値を設定（ノイズレベルの1.5倍に下げて感度アップ）
+                self.adaptive_threshold = max(self.threshold, self.noise_level * 1.5)
             else:
                 # ノイズレベルが検出されない場合はより低い閾値を使用
-                self.adaptive_threshold = self.threshold * 0.8
+                self.adaptive_threshold = self.threshold * 0.7
         else:
             avg_volume = volume
         
-        # 音声検出（適応的閾値を使用）
+        # 音量の変化率を計算（予測的検出）
+        volume_trend = 0
+        if len(self.volume_history) >= 3:
+            recent_volumes = list(self.volume_history)[-3:]
+            volume_trend = (recent_volumes[-1] - recent_volumes[0]) / 2  # 変化率
+        
+        # 複数レベルの音声検出
         is_sound_detected = avg_volume > self.adaptive_threshold
-        
-        # より積極的な音声検出（瞬間的な音量も考慮）
         instant_sound_detected = volume > self.adaptive_threshold * 1.2
+        trend_sound_detected = volume_trend > self.adaptive_threshold * 0.5  # 音量が急激に上昇
         
-        if is_sound_detected or instant_sound_detected:
+        # 予測的反応：音量が急上昇している場合は即座に反応
+        predictive_detection = (volume > self.adaptive_threshold * 0.8 and volume_trend > 0.001)
+        
+        any_sound_detected = is_sound_detected or instant_sound_detected or trend_sound_detected or predictive_detection
+        
+        if any_sound_detected:
             self.last_sound_time = current_time
             
-            # 話し始めの検出（より早い反応）
+            # 話し始めの検出（超高速反応）
             if not self.is_speaking:
-                if self.speaking_start_time is None:
-                    self.speaking_start_time = current_time
-                elif current_time - self.speaking_start_time >= self.min_speaking_duration:
+                # 予測的検出や瞬間検出の場合は待機時間なしで即座に反応
+                if instant_sound_detected or predictive_detection or trend_sound_detected:
                     self.is_speaking = True
                     self.speaking_start_time = current_time
-                    logger.info(f"🎤 音声検出開始 (音量: {avg_volume:.3f}, 閾値: {self.adaptive_threshold:.3f})")
+                    logger.info(f"🚀 即座音声検出 (音量: {volume:.3f}, 傾向: {volume_trend:.3f})")
                     if self.on_speaking_start:
                         self.on_speaking_start()
+                else:
+                    # 通常の検出の場合は最小待機時間を適用
+                    if self.speaking_start_time is None:
+                        self.speaking_start_time = current_time
+                    elif current_time - self.speaking_start_time >= self.min_speaking_duration:
+                        self.is_speaking = True
+                        self.speaking_start_time = current_time
+                        logger.info(f"🎤 音声検出開始 (音量: {avg_volume:.3f}, 閾値: {self.adaptive_threshold:.3f})")
+                        if self.on_speaking_start:
+                            self.on_speaking_start()
         else:
             # 無音の場合、話し始めタイマーをリセット
             self.speaking_start_time = None
             
             # 話し終わりの検出
             if self.is_speaking and self.last_sound_time:
-                if current_time - self.last_sound_time >= self.silence_timeout:
+                if current_time - self.last_sound_time >= 0.03:  # 0.03秒の無音で即座に停止（超高速化）
                     self.is_speaking = False
                     self.last_sound_time = None
                     logger.info("🔇 音声検出終了")
@@ -160,7 +190,9 @@ class AudioAnalyzer:
             'volume': volume,
             'avg_volume': avg_volume,
             'is_speaking': self.is_speaking,
-            'is_sound_detected': is_sound_detected or instant_sound_detected,
+            'is_sound_detected': any_sound_detected,
+            'predictive_detected': predictive_detection,
+            'volume_trend': volume_trend,
             'adaptive_threshold': self.adaptive_threshold,
             'noise_level': self.noise_level
         }
@@ -168,40 +200,52 @@ class AudioAnalyzer:
     def start_monitoring(self):
         """音声監視を開始"""
         try:
-            # マイクストリームを開く
+            # マイクストリームを開く（低遅延設定）
             self.stream = self.audio.open(
                 format=pyaudio.paInt16,
                 channels=1,
                 rate=self.sample_rate,
                 input=True,
-                frames_per_buffer=self.chunk_size
+                frames_per_buffer=self.chunk_size,
+                input_device_index=None,  # デフォルトデバイス
+                # 低遅延設定
+                stream_callback=None,
+                start=False
             )
             
-            logger.info("🎧 音声監視開始")
+            logger.info("🎧 超高速音声監視開始")
             logger.info(f"  サンプリングレート: {self.sample_rate} Hz")
-            logger.info(f"  チャンクサイズ: {self.chunk_size}")
+            logger.info(f"  チャンクサイズ: {self.chunk_size} (遅延: ~{self.chunk_size/self.sample_rate*1000:.1f}ms)")
             logger.info(f"  音声検出閾値: {self.threshold}")
             logger.info(f"  最小話し続け時間: {self.min_speaking_duration}秒")
             logger.info(f"  無音タイムアウト: {self.silence_timeout}秒")
             
+            # ストリーム開始
+            self.stream.start_stream()
             self.is_running = True
             
-            # 解析ループ
+            # 高速解析ループ
             while self.is_running:
                 try:
-                    # 音声データを読み取り
-                    audio_data = self.stream.read(self.chunk_size, exception_on_overflow=False)
-                    
-                    # データの妥当性チェック
-                    if len(audio_data) == 0:
-                        continue
-                    
-                    # 解析実行
-                    result = self.analyze_audio_chunk(audio_data)
-                    
-                    # デバッグ情報（音声検出時のみ表示）
-                    if result['is_sound_detected'] and result['avg_volume'] > 0:
-                        logger.debug(f"音量: {result['avg_volume']:.3f}, 話中: {result['is_speaking']}")
+                    # ノンブロッキング音声データ読み取り
+                    if self.stream.get_read_available() >= self.chunk_size:
+                        audio_data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+                        
+                        # データの妥当性チェック
+                        if len(audio_data) == 0:
+                            continue
+                        
+                        # 解析実行
+                        result = self.analyze_audio_chunk(audio_data)
+                        
+                        # デバッグ情報（予測検出時のみ表示）
+                        if result.get('predictive_detected', False):
+                            logger.debug(f"🚀 予測検出: 音量={result['volume']:.3f}, 傾向={result['volume_trend']:.3f}")
+                        elif result['is_sound_detected'] and result['avg_volume'] > 0:
+                            logger.debug(f"音量: {result['avg_volume']:.3f}, 話中: {result['is_speaking']}")
+                    else:
+                        # 利用可能なデータがない場合は短時間待機
+                        time.sleep(0.001)  # 1ms待機
                     
                 except OSError as e:
                     # 音声デバイス関連のエラー
@@ -249,13 +293,16 @@ class TalkingModeController:
         self.server_url = server_url
         self.is_talking_mode_active = False
         self.last_request_time = 0
-        self.request_cooldown = 0.2  # リクエスト間隔制限を短縮 (秒)
+        self.request_cooldown = 0.05  # リクエスト間隔制限をさらに短縮 (秒)
+        # セッション再利用で高速化
+        self.session = requests.Session()
+        self.session.headers.update({'Content-Type': 'application/json'})
     
     def set_talking_mode(self, enabled):
-        """おしゃべりモードを設定"""
+        """おしゃべりモードを設定（超高速版）"""
         current_time = time.time()
         
-        # リクエスト頻度制限
+        # より緩いリクエスト頻度制限
         if current_time - self.last_request_time < self.request_cooldown:
             return
         
@@ -263,11 +310,11 @@ class TalkingModeController:
             return  # 状態が同じ場合は何もしない
         
         try:
-            response = requests.post(
+            # セッション再利用で高速化、タイムアウトを短縮
+            response = self.session.post(
                 f"{self.server_url}/talking_mouth_mode",
-                headers={'Content-Type': 'application/json'},
                 json={'talking_mouth_mode': enabled},
-                timeout=2
+                timeout=1  # タイムアウトを1秒に短縮
             )
             
             if response.status_code == 200:
@@ -486,12 +533,12 @@ def main():
     parser = argparse.ArgumentParser(description='音声リップシンク監視システム')
     parser.add_argument('--server', default='http://localhost:8080', 
                        help='HTTPサーバーのURL (デフォルト: http://localhost:8080)')
-    parser.add_argument('--threshold', type=float, default=0.005,
-                       help='音声検出の閾値 (デフォルト: 0.005)')
-    parser.add_argument('--min-duration', type=float, default=0.1,
-                       help='最小話し続け時間 (秒, デフォルト: 0.1)')
-    parser.add_argument('--silence-timeout', type=float, default=0.3,
-                       help='無音状態でのタイムアウト (秒, デフォルト: 0.3)')
+    parser.add_argument('--threshold', type=float, default=0.003,
+                       help='音声検出の閾値 (デフォルト: 0.003)')
+    parser.add_argument('--min-duration', type=float, default=0.01,
+                       help='最小話し続け時間 (秒, デフォルト: 0.01)')
+    parser.add_argument('--silence-timeout', type=float, default=0.03,
+                       help='無音状態でのタイムアウト (秒, デフォルト: 0.03)')
     
     args = parser.parse_args()
     
