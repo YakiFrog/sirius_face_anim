@@ -1,5 +1,5 @@
 /**
- * おしゃべりモードの管理クラス
+ * おしゃべりモードの管理クラス（高速化・最適化版）
  * Sキーでトリガーされ、口の3パターンを切り替える
  */
 export class TalkingMode {
@@ -7,24 +7,28 @@ export class TalkingMode {
   private currentMouthPattern: number = 0;
   private intervalId: NodeJS.Timeout | null = null;
   private mouthPatterns: string[] = ['mouth_a', 'mouth_i', 'mouth_o'];
-  private switchInterval: number = 400; // 400msごとに切り替え
-  private isRandomMode: boolean = false; // ランダムモードフラグ
-  private minInterval: number = 150; // 最小切り替え間隔（ms）
-  private maxInterval: number = 350; // 最大切り替え間隔（ms）
+  private switchInterval: number = 200; // 400ms→200msに高速化
+  private isRandomMode: boolean = false;
+  private minInterval: number = 80; // 150ms→80msに高速化
+  private maxInterval: number = 180; // 350ms→180msに高速化
   
-  // バウンスアニメーション用
+  // バウンスアニメーション用（高速化）
   private bounceStartTime: number = 0;
-  private bounceAnimationDuration: number = 150; // 150msのアニメーション
+  private bounceAnimationDuration: number = 100; // 150ms→100msに高速化
   private isBouncing: boolean = false;
   
   // 停止待機用
   private pendingStop: boolean = false;
   private stopTimeoutId: NodeJS.Timeout | null = null;
+  
+  // パフォーマンス最適化用
+  private lastPatternChangeTime: number = 0;
+  private minChangeInterval: number = 50; // 最小変更間隔50ms
 
   constructor() {}
 
   /**
-   * おしゃべりモードを開始
+   * おしゃべりモードを開始（高速化版）
    */
   public start(randomMode: boolean = false): void {
     if (this.isActive) return;
@@ -39,32 +43,44 @@ export class TalkingMode {
     this.isActive = true;
     this.isRandomMode = randomMode;
     this.currentMouthPattern = 0;
+    this.lastPatternChangeTime = Date.now();
     this.startBounceAnimation();
     
-    console.log(`✨ ${randomMode ? 'ランダム' : '順次'}おしゃべりモード開始`);
+    console.log(`✨ ${randomMode ? 'ランダム' : '順次'}おしゃべりモード開始（高速化版）`);
     
     // 最初のパターン変更をスケジュール
     this.scheduleNextPatternChange();
   }
 
   /**
-   * 次のパターン変更をスケジュール
+   * 次のパターン変更をスケジュール（高速化版）
    */
   private scheduleNextPatternChange(): void {
     if (!this.isActive) return;
     
-    // ランダムモードの場合は時間間隔もランダムに
+    // ランダムモードの場合は時間間隔もランダムに（短縮）
     let interval = this.isRandomMode 
       ? Math.random() * (this.maxInterval - this.minInterval) + this.minInterval
       : this.switchInterval;
     
-    // 「i」の口の場合は切り替え時間を短くする
+    // 「i」の口の場合は切り替え時間を短くする（さらに短縮）
     if (this.mouthPatterns[this.currentMouthPattern] === 'mouth_i') {
-      interval *= 0.4; // 40%に短縮
+      interval *= 0.3; // 40%→30%に短縮
     }
+    
+    // 最小間隔を保証
+    interval = Math.max(interval, this.minChangeInterval);
     
     this.intervalId = setTimeout(() => {
       if (!this.isActive) return;
+      
+      const now = Date.now();
+      
+      // 前回の変更から十分な時間が経過していない場合はスキップ
+      if (now - this.lastPatternChangeTime < this.minChangeInterval) {
+        this.scheduleNextPatternChange();
+        return;
+      }
       
       let newPattern: number;
       
@@ -79,12 +95,11 @@ export class TalkingMode {
       // パターンが実際に変わった場合のみバウンスアニメーションを実行
       const patternChanged = newPattern !== this.currentMouthPattern;
       this.currentMouthPattern = newPattern;
+      this.lastPatternChangeTime = now;
       
       if (patternChanged) {
         this.startBounceAnimation();
-        console.log(`口パターン変更: ${this.mouthPatterns[this.currentMouthPattern]} (${interval.toFixed(0)}ms後)`);
-      } else {
-        console.log(`口パターン変更なし: ${this.mouthPatterns[this.currentMouthPattern]} (同じパターンのためバウンスなし)`);
+        // console.log(`口パターン変更: ${this.mouthPatterns[this.currentMouthPattern]} (${interval.toFixed(0)}ms後)`);
       }
       
       // 次のパターン変更をスケジュール
@@ -101,7 +116,7 @@ export class TalkingMode {
   }
 
   /**
-   * バウンススケールを計算（イージング関数付き）
+   * バウンススケールを計算（イージング関数付き・高速化版）
    */
   public getBounceScale(): number {
     if (!this.isBouncing) return 1.0;
@@ -120,9 +135,9 @@ export class TalkingMode {
       return 1.0;
     }
     
-    // バウンスイージング関数
-    // 1.0 → 1.1 → 1.0 の動きを作る
-    const bounceHeight = 0.1; // 10%拡大
+    // バウンスイージング関数（軽量化）
+    // 1.0 → 1.05 → 1.0 の動きを作る（5%に減らして軽量化）
+    const bounceHeight = 0.05; // 10%→5%に軽量化
     const bounceScale = 1.0 + bounceHeight * Math.sin(progress * Math.PI);
     
     return bounceScale;
@@ -136,7 +151,7 @@ export class TalkingMode {
   }
 
   /**
-   * おしゃべりモードを停止
+   * おしゃべりモードを停止（高速化版）
    */
   public stop(): void {
     if (!this.isActive) return;
@@ -144,7 +159,7 @@ export class TalkingMode {
     // 現在アニメーション中の場合は停止を待機
     if (this.isBouncing) {
       this.pendingStop = true;
-      console.log('🔄 アニメーション完了待ち - おしゃべりモード停止予約');
+      // console.log('🔄 アニメーション完了待ち - おしゃべりモード停止予約');
       return;
     }
     
@@ -153,7 +168,7 @@ export class TalkingMode {
   }
 
   /**
-   * 実際の停止処理を実行
+   * 実際の停止処理を実行（高速化版）
    */
   private executeStop(): void {
     if (!this.isActive && !this.pendingStop) return;
@@ -175,7 +190,7 @@ export class TalkingMode {
       this.stopTimeoutId = null;
     }
     
-    console.log('🔇 おしゃべりモード停止');
+    // console.log('🔇 おしゃべりモード停止（高速化版）');
   }
 
   /**

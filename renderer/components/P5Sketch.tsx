@@ -716,9 +716,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.eyeVerticalFactor += (verticalSizeFactor - p5.eyeVerticalFactor) * params.easeFactor;
   };
 
-  // 瞳の位置を更新
+  // 瞳の位置を更新（高速化版）
   const updatePupilPositions = (p5, params) => {
-    const eyeMovementEase = 0.1;
+    const eyeMovementEase = 0.15; // 0.1→0.15に高速化
     
     p5.leftEyeTarget = p5.leftEyeTarget || { x: 0, y: 0 };
     p5.rightEyeTarget = p5.rightEyeTarget || { x: 0, y: 0 };
@@ -729,7 +729,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       p5.leftEyeTarget = { ...manualPupilTargetRef.current };
       p5.rightEyeTarget = { ...manualPupilTargetRef.current };
     } else {
-      // 自動瞳移動
+      // 自動瞳移動（頻度を下げて軽量化）
       if (!p5.frameCount || p5.frameCount >= p5.nextEyeMovement) {
         const eyeRadius = params.eyeRadius || params.eyeSize * 0.4;
         p5.leftEyeTarget = {
@@ -738,8 +738,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         };
         p5.rightEyeTarget = { ...p5.leftEyeTarget };
         
-        const minFrames = 60 * 3;
-        const maxFrames = 600;
+        const minFrames = 60 * 4; // 3秒→4秒に頻度を下げる
+        const maxFrames = 800; // 600→800に頻度を下げる
         p5.nextEyeMovement = p5.frameCount + Math.floor(Math.random() * (maxFrames - minFrames + 1)) + minFrames;
       }
     }
@@ -903,13 +903,17 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     p5.highlightPosRight.x += (p5.rightEyePos.x - p5.highlightPosRight.x) * highlightEasing;
     p5.highlightPosRight.y += (p5.rightEyePos.y - p5.highlightPosRight.y) * highlightEasing;
     
-    // --- きゅるきゅる微振動追加 ---
-    const vibrateAmp = params.eyeSize * 0.0015; // 振幅: 目サイズの0.15%
-    const vibrateFreq = 0.3; // 周波数
-    p5.highlightPosLeft.x += Math.sin(p5.frameCount * vibrateFreq) * vibrateAmp;
-    p5.highlightPosLeft.y += Math.cos(p5.frameCount * vibrateFreq * 1.2) * vibrateAmp;
-    p5.highlightPosRight.x += Math.sin((p5.frameCount + 100) * vibrateFreq) * vibrateAmp;
-    p5.highlightPosRight.y += Math.cos((p5.frameCount + 100) * vibrateFreq * 1.2) * vibrateAmp;
+    // --- きゅるきゅる微振動追加（軽量化版） ---
+    const vibrateAmp = params.eyeSize * 0.001; // 振幅: 0.15% → 0.1%に軽量化
+    const vibrateFreq = 0.2; // 周波数: 0.3 → 0.2に軽量化
+    
+    // フレーム数を2で割って計算頻度を半分に
+    const frameForVibration = Math.floor(p5.frameCount / 2);
+    
+    p5.highlightPosLeft.x += Math.sin(frameForVibration * vibrateFreq) * vibrateAmp;
+    p5.highlightPosLeft.y += Math.cos(frameForVibration * vibrateFreq * 1.2) * vibrateAmp;
+    p5.highlightPosRight.x += Math.sin((frameForVibration + 100) * vibrateFreq) * vibrateAmp;
+    p5.highlightPosRight.y += Math.cos((frameForVibration + 100) * vibrateFreq * 1.2) * vibrateAmp;
 
     // 調整されたサイズを適用
     let currentEyeWidth = params.eyeSize;

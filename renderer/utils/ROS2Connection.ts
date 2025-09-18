@@ -11,6 +11,17 @@ export class ROS2Connection {
   private isPollingActive: boolean = true;
   private lastTalkingMouthModeState: boolean | null = null;
   private lastMouthPatternState: string | null = null;
+  
+  // 高速化用の設定
+  private fastPollingInterval: number = 100; // 100ms間隔に短縮
+  private requestTimeout: number = 50; // タイムアウトを50msに短縮
+  private consecutiveErrors: number = 0;
+  private maxConsecutiveErrors: number = 5;
+  private backoffMultiplier: number = 1;
+  
+  // リクエストキャッシュ（冗長リクエスト防止）
+  private requestCache: Map<string, { data: any; timestamp: number }> = new Map();
+  private cacheTimeout: number = 200; // 200msキャッシュ
 
   constructor(enableRos2Connection: boolean, ros2HttpUrl: string) {
     this.enableRos2Connection = enableRos2Connection;
@@ -35,8 +46,9 @@ export class ROS2Connection {
       return;
     }
 
-    console.log(`ROS2接続開始: ${this.ros2HttpUrl}`);
+    console.log(`🚀 高速ROS2接続開始: ${this.ros2HttpUrl} (${this.fastPollingInterval}ms間隔)`);
     this.isPollingActive = true;
+    this.consecutiveErrors = 0;
 
     // 初回取得
     this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
@@ -44,12 +56,24 @@ export class ROS2Connection {
     this.fetchTalkingMouthModeAndControl(talkingMode);
     this.fetchMouthPatternAndControl(mouthPatternController);
 
-    // ポーリング間隔を調整（1000ms = 1秒間隔）
+    // 高速ポーリング開始
     this.pollingInterval = setInterval(() => {
-      this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
-      this.fetchDisplayMode(displayMode, onDisplayModeToggle);
-      this.fetchTalkingMouthModeAndControl(talkingMode);
-      this.fetchMouthPatternAndControl(mouthPatternController);
+      const currentInterval = this.fastPollingInterval * this.backoffMultiplier;
+      
+      Promise.all([
+        this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus),
+        this.fetchDisplayMode(displayMode, onDisplayModeToggle),
+        this.fetchTalkingMouthModeAndControl(talkingMode),
+        this.fetchMouthPatternAndControl(mouthPatternController)
+      ]).catch(() => {
+        // エラーハンドリングは各メソッド内で実施
+      });
+      
+    }, this.fastPollingInterval);
+
+    // 定期的なキャッシュクリーンアップ
+    setInterval(() => {
+      this.cleanupCache();
     }, 1000);
   }
 
@@ -57,6 +81,99 @@ export class ROS2Connection {
     this.isPollingActive = false;
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
+    }
+    this.requestCache.clear();
+  }
+
+  private cleanupCache() {
+    const now = Date.now();
+    const keysToDelete: string[] = [];
+    
+    this.requestCache.forEach((value, key) => {
+      if (now - value.timestamp > this.cacheTimeout) {
+        keysToDelete.push(key);
+      }
+    });
+    
+    keysToDelete.forEach(key => {
+      this.requestCache.delete(key);
+    });
+  }
+
+  private async fetchWithCache(url: string): Promise<any> {
+    const cacheKey = url;
+    const cached = this.requestCache.get(cacheKey);
+    const now = Date.now();
+    
+    // キャッシュが有効な場合は返す
+    if (cached && (now - cached.timestamp) < this.cacheTimeout) {
+      return cached.data;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // キャッシュに保存
+        this.requestCache.set(cacheKey, { data, timestamp: now });
+        
+        // エラーカウンタをリセット
+        this.consecutiveErrors = 0;
+        this.backoffMultiplier = 1;
+        
+        return data;
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      this.handleRequestError();
+      throw error;
+    }
+  }
+
+  private async postWithTimeout(url: string, body: any): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        this.consecutiveErrors = 0;
+        this.backoffMultiplier = 1;
+        return true;
+      } else {
+        this.handleRequestError();
+        return false;
+      }
+    } catch (error) {
+      this.handleRequestError();
+      return false;
+    }
+  }
+
+  private handleRequestError() {
+    this.consecutiveErrors++;
+    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      this.backoffMultiplier = Math.min(this.backoffMultiplier * 2, 8); // 最大8倍まで
     }
   }
 
@@ -80,25 +197,15 @@ export class ROS2Connection {
     }
 
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/expression`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.expression && this.isValidExpression(data.expression)) {
-          const newExpression = data.expression as FacialExpression;
-          setExpression(newExpression);
-        }
-        setIsConnected(true);
-        setConnectionStatus('接続中');
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/expression`);
+      
+      if (data.expression && this.isValidExpression(data.expression)) {
+        const newExpression = data.expression as FacialExpression;
+        setExpression(newExpression);
       }
+      setIsConnected(true);
+      setConnectionStatus('高速接続中');
     } catch (error) {
-      console.log('HTTP接続エラー:', error.message);
       setIsConnected(false);
       setConnectionStatus('切断');
     }
@@ -108,22 +215,15 @@ export class ROS2Connection {
     if (!this.isPollingActive) return;
 
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/display_mode`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.display_mode && (data.display_mode === 'face' || data.display_mode === 'image')) {
-          if (data.display_mode !== displayMode && onDisplayModeToggle) {
-            onDisplayModeToggle();
-          }
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/display_mode`);
+      
+      if (data.display_mode && (data.display_mode === 'face' || data.display_mode === 'image')) {
+        if (data.display_mode !== displayMode && onDisplayModeToggle) {
+          onDisplayModeToggle();
         }
       }
     } catch (error) {
-      console.log('表示モード取得エラー:', error.message);
+      // サイレントエラー処理
     }
   }
 
@@ -131,39 +231,31 @@ export class ROS2Connection {
     if (!this.isPollingActive || !talkingMode) return;
 
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const currentState = !!data.talking_mouth_mode;
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/talking_mouth_mode`);
+      const currentState = !!data.talking_mouth_mode;
+      
+      // 状態が変更された場合のみ制御
+      if (this.lastTalkingMouthModeState !== currentState) {
+        console.log(`🎭 お喋り口モード状態変更: ${this.lastTalkingMouthModeState} → ${currentState}`);
         
-        // 状態が変更された場合のみ制御
-        if (this.lastTalkingMouthModeState !== currentState) {
-          console.log(`お喋り口モード状態変更: ${this.lastTalkingMouthModeState} → ${currentState}`);
-          
-          if (currentState) {
-            // お喋りモードを開始（ランダムモード）
-            if (!talkingMode.getIsActive()) {
-              talkingMode.start(true); // Dキーと同じランダムモード
-              console.log('🎯 HTTPサーバー指示によりランダムおしゃべりモード開始');
-            }
-          } else {
-            // お喋りモードを停止
-            if (talkingMode.getIsActive()) {
-              talkingMode.stop();
-              console.log('🛑 HTTPサーバー指示によりおしゃべりモード停止');
-            }
+        if (currentState) {
+          // お喋りモードを開始（ランダムモード）
+          if (!talkingMode.getIsActive()) {
+            talkingMode.start(true); // Dキーと同じランダムモード
+            console.log('🎯 HTTPサーバー指示によりランダムおしゃべりモード開始');
           }
-          
-          this.lastTalkingMouthModeState = currentState;
+        } else {
+          // お喋りモードを停止
+          if (talkingMode.getIsActive()) {
+            talkingMode.stop();
+            console.log('🛑 HTTPサーバー指示によりおしゃべりモード停止');
+          }
         }
+        
+        this.lastTalkingMouthModeState = currentState;
       }
     } catch (error) {
-      console.log('お喋り口モード制御エラー:', error.message);
+      // サイレントエラー処理
     }
   }
 
@@ -171,52 +263,34 @@ export class ROS2Connection {
     if (!this.isPollingActive || !mouthPatternController) return;
 
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const currentPattern = data.mouth_pattern;
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/mouth_pattern`);
+      const currentPattern = data.mouth_pattern;
+      
+      // 状態が変更された場合のみ制御
+      if (this.lastMouthPatternState !== currentPattern) {
+        console.log(`👄 口パターン状態変更: ${this.lastMouthPatternState} → ${currentPattern}`);
         
-        // 状態が変更された場合のみ制御
-        if (this.lastMouthPatternState !== currentPattern) {
-          console.log(`口パターン状態変更: ${this.lastMouthPatternState} → ${currentPattern}`);
-          
-          if (currentPattern && this.isValidMouthPattern(currentPattern)) {
-            mouthPatternController.setMouthPattern(currentPattern as 'mouth_a' | 'mouth_i' | 'mouth_o');
-            console.log(`🎯 HTTPサーバー指示により口パターンを${currentPattern}に変更`);
-          } else if (currentPattern === null) {
-            mouthPatternController.clear();
-            console.log(`🎯 HTTPサーバー指示により口パターンをクリア`);
-          }
-          
-          this.lastMouthPatternState = currentPattern;
+        if (currentPattern && this.isValidMouthPattern(currentPattern)) {
+          mouthPatternController.setMouthPattern(currentPattern as 'mouth_a' | 'mouth_i' | 'mouth_o');
+          console.log(`🎯 HTTPサーバー指示により口パターンを${currentPattern}に変更`);
+        } else if (currentPattern === null) {
+          mouthPatternController.clear();
+          console.log(`🎯 HTTPサーバー指示により口パターンをクリア`);
         }
+        
+        this.lastMouthPatternState = currentPattern;
       }
     } catch (error) {
-      console.log('口パターン制御エラー:', error.message);
+      // サイレントエラー処理
     }
   }
 
   public async sendExpressionToRos2(expression: FacialExpression): Promise<void> {
     if (!this.enableRos2Connection) return;
 
-    try {
-      const response = await fetch(`${this.ros2HttpUrl}/expression`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expression }),
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      console.warn('表情の送信に失敗しました:', error.message);
+    const success = await this.postWithTimeout(`${this.ros2HttpUrl}/expression`, { expression });
+    if (!success) {
+      console.warn('表情の送信に失敗しました');
     }
   }
 
@@ -224,74 +298,34 @@ export class ROS2Connection {
   public async fetchTalkingMouthMode(): Promise<boolean | null> {
     if (!this.enableRos2Connection) return null;
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return !!data.talking_mouth_mode;
-      }
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/talking_mouth_mode`);
+      return !!data.talking_mouth_mode;
     } catch (error) {
-      console.warn('お喋り口モード取得失敗:', error.message);
+      return null;
     }
-    return null;
   }
 
   // お喋り口モードのオン/オフを設定
   public async setTalkingMouthMode(enable: boolean): Promise<void> {
     if (!this.enableRos2Connection) return;
-    try {
-      const response = await fetch(`${this.ros2HttpUrl}/talking_mouth_mode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ talking_mouth_mode: enable }),
-        signal: AbortSignal.timeout(2000)
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      console.warn('お喋り口モード切替失敗:', error.message);
-    }
+    await this.postWithTimeout(`${this.ros2HttpUrl}/talking_mouth_mode`, { talking_mouth_mode: enable });
   }
 
   // 口パターンの状態を取得
   public async fetchMouthPattern(): Promise<string | null> {
     if (!this.enableRos2Connection) return null;
     try {
-      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(2000)
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return data.mouth_pattern || null;
-      }
+      const data = await this.fetchWithCache(`${this.ros2HttpUrl}/mouth_pattern`);
+      return data.mouth_pattern || null;
     } catch (error) {
-      console.warn('口パターン取得失敗:', error.message);
+      return null;
     }
-    return null;
   }
 
   // 口パターンを設定
   public async setMouthPattern(pattern: string): Promise<void> {
     if (!this.enableRos2Connection) return;
-    try {
-      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mouth_pattern: pattern }),
-        signal: AbortSignal.timeout(2000)
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      console.warn('口パターン設定失敗:', error.message);
-    }
+    await this.postWithTimeout(`${this.ros2HttpUrl}/mouth_pattern`, { mouth_pattern: pattern });
   }
 
   private isValidExpression(exp: string): boolean {
