@@ -22,6 +22,9 @@ class Args:
     text: str
     out: Path
     style_id: int
+    speed_scale: float
+    pitch_scale: float
+    intonation_scale: float
 
     @staticmethod
     def parse_args() -> "Args":
@@ -50,7 +53,7 @@ class Args:
         )
         argparser.add_argument(
             "--text",
-            default="text = コ'ンニチワ、コレワ'/テ'_ストデ_ス",
+            default="この音声は、ボイスボックスを使用して、出力されています。",
             help="読み上げさせたい文章",
         )
         argparser.add_argument(
@@ -61,9 +64,27 @@ class Args:
         )
         argparser.add_argument(
             "--style-id",
-            default=None,
+            default=69,
             type=int,
             help="話者IDを指定",
+        )
+        argparser.add_argument(
+            "--speed-scale",
+            default=0.9,
+            type=float,
+            help="話速 (1.0が標準)",
+        )
+        argparser.add_argument(
+            "--pitch-scale",
+            default=0.08,
+            type=float,
+            help="音高 (0.0が標準)",
+        )
+        argparser.add_argument(
+            "--intonation-scale",
+            default=0.0,
+            type=float,
+            help="抑揚 (1.0が標準)",
         )
         args = argparser.parse_args()
         return Args(
@@ -74,6 +95,9 @@ class Args:
             args.text,
             args.out,
             args.style_id,
+            args.speed_scale,
+            args.pitch_scale,
+            args.intonation_scale,
         )
 
 
@@ -133,6 +157,16 @@ async def main() -> None:
 
     logger.info("%s", f"Creating an AudioQuery from {args.text!r}")
     audio_query = await synthesizer.create_audio_query(args.text, args.style_id)
+
+    # 音声パラメータの調整
+    logger.info("🎵 音声パラメータ調整:")
+    logger.info(f"  BPM(話速): {args.speed_scale}")
+    logger.info(f"  ピッチ: {args.pitch_scale}")
+    logger.info(f"  抑揚: {args.intonation_scale}")
+    
+    audio_query.speed_scale = args.speed_scale
+    audio_query.pitch_scale = args.pitch_scale
+    audio_query.intonation_scale = args.intonation_scale
 
     logger.info("%s", f"Synthesizing with {audio_query}")
     wav = await synthesizer.synthesis(audio_query, args.style_id)
