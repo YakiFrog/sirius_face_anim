@@ -1,5 +1,6 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
 import { TalkingMode } from './TalkingMode';
+import { MouthPatternController } from './MouthPatternController';
 
 export class ROS2Connection {
   private enableRos2Connection: boolean;
@@ -9,6 +10,7 @@ export class ROS2Connection {
   private pollingInterval?: NodeJS.Timeout;
   private isPollingActive: boolean = true;
   private lastTalkingMouthModeState: boolean | null = null;
+  private lastMouthPatternState: string | null = null;
 
   constructor(enableRos2Connection: boolean, ros2HttpUrl: string) {
     this.enableRos2Connection = enableRos2Connection;
@@ -24,7 +26,8 @@ export class ROS2Connection {
     setConnectionStatus: (status: string) => void,
     displayMode: string,
     onDisplayModeToggle?: () => void,
-    talkingMode?: TalkingMode
+    talkingMode?: TalkingMode,
+    mouthPatternController?: MouthPatternController
   ) {
     if (!this.enableRos2Connection) {
       setConnectionStatus('切断');
@@ -39,12 +42,14 @@ export class ROS2Connection {
     this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
     this.fetchDisplayMode(displayMode, onDisplayModeToggle);
     this.fetchTalkingMouthModeAndControl(talkingMode);
+    this.fetchMouthPatternAndControl(mouthPatternController);
 
     // ポーリング間隔を調整（1000ms = 1秒間隔）
     this.pollingInterval = setInterval(() => {
       this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
       this.fetchDisplayMode(displayMode, onDisplayModeToggle);
       this.fetchTalkingMouthModeAndControl(talkingMode);
+      this.fetchMouthPatternAndControl(mouthPatternController);
     }, 1000);
   }
 
@@ -162,6 +167,40 @@ export class ROS2Connection {
     }
   }
 
+  private async fetchMouthPatternAndControl(mouthPatternController?: MouthPatternController) {
+    if (!this.isPollingActive || !mouthPatternController) return;
+
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(2000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const currentPattern = data.mouth_pattern;
+        
+        // 状態が変更された場合のみ制御
+        if (this.lastMouthPatternState !== currentPattern) {
+          console.log(`口パターン状態変更: ${this.lastMouthPatternState} → ${currentPattern}`);
+          
+          if (currentPattern && this.isValidMouthPattern(currentPattern)) {
+            mouthPatternController.setMouthPattern(currentPattern as 'mouth_a' | 'mouth_i' | 'mouth_o');
+            console.log(`🎯 HTTPサーバー指示により口パターンを${currentPattern}に変更`);
+          } else if (currentPattern === null) {
+            mouthPatternController.clear();
+            console.log(`🎯 HTTPサーバー指示により口パターンをクリア`);
+          }
+          
+          this.lastMouthPatternState = currentPattern;
+        }
+      }
+    } catch (error) {
+      console.log('口パターン制御エラー:', error.message);
+    }
+  }
+
   public async sendExpressionToRos2(expression: FacialExpression): Promise<void> {
     if (!this.enableRos2Connection) return;
 
@@ -218,7 +257,48 @@ export class ROS2Connection {
     }
   }
 
+  // 口パターンの状態を取得
+  public async fetchMouthPattern(): Promise<string | null> {
+    if (!this.enableRos2Connection) return null;
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(2000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.mouth_pattern || null;
+      }
+    } catch (error) {
+      console.warn('口パターン取得失敗:', error.message);
+    }
+    return null;
+  }
+
+  // 口パターンを設定
+  public async setMouthPattern(pattern: string): Promise<void> {
+    if (!this.enableRos2Connection) return;
+    try {
+      const response = await fetch(`${this.ros2HttpUrl}/mouth_pattern`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mouth_pattern: pattern }),
+        signal: AbortSignal.timeout(2000)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.warn('口パターン設定失敗:', error.message);
+    }
+  }
+
   private isValidExpression(exp: string): boolean {
     return ['neutral', 'happy', 'angry', 'sad', 'surprised', 'crying', 'hurt', 'wink', 'mouth3', 'pien'].includes(exp);
+  }
+
+  private isValidMouthPattern(pattern: string): boolean {
+    return ['mouth_a', 'mouth_i', 'mouth_o'].includes(pattern);
   }
 }

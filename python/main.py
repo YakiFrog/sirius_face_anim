@@ -42,6 +42,7 @@ class FaceAnimationController:
         self.current_expression = ExpressionMode.NEUTRAL
         self.current_display_mode = DisplayMode.FACE
         self.talking_mouth_mode = False
+        self.current_mouth_pattern = None  # None, "mouth_a", "mouth_i", "mouth_o"
         self.is_blinking = True
         self.blink_interval = 3.0  # 秒
         self._lock = threading.Lock()
@@ -79,6 +80,17 @@ class FaceAnimationController:
             logger.info(f"お喋り口モード: {self.talking_mouth_mode}")
             return True
     
+    def set_mouth_pattern(self, pattern):
+        """口パターンを設定"""
+        with self._lock:
+            valid_patterns = [None, "mouth_a", "mouth_i", "mouth_o"]
+            if pattern not in valid_patterns:
+                return False
+            
+            self.current_mouth_pattern = pattern
+            logger.info(f"口パターンを {pattern} に変更")
+            return True
+    
     def set_blinking(self, enabled, interval=None):
         """瞬きの設定"""
         with self._lock:
@@ -95,6 +107,7 @@ class FaceAnimationController:
                 "expression": self.current_expression.value,
                 "display_mode": self.current_display_mode.value,
                 "talking_mouth_mode": self.talking_mouth_mode,
+                "mouth_pattern": self.current_mouth_pattern,
                 "is_blinking": self.is_blinking,
                 "blink_interval": self.blink_interval
             }
@@ -161,6 +174,11 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
             status = self.controller.get_status()
             self._send_response(200, {"talking_mouth_mode": status["talking_mouth_mode"]})
             
+        elif path == '/mouth_pattern':
+            # 現在の口パターンを取得
+            status = self.controller.get_status()
+            self._send_response(200, {"mouth_pattern": status["mouth_pattern"]})
+            
         elif path == '/api/expression':
             # 利用可能な表情モード一覧
             expressions = [mode.value for mode in ExpressionMode]
@@ -180,9 +198,11 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
                     "GET /expression": "現在の表情を取得",
                     "GET /display_mode": "現在の表示モードを取得",
                     "GET /talking_mouth_mode": "現在のお喋り口モードを取得",
+                    "GET /mouth_pattern": "現在の口パターンを取得",
                     "POST /expression": "表情モードを設定 {'expression': 'happy'}",
                     "POST /display_mode": "表示モードを設定 {'display_mode': 'face'}",
                     "POST /talking_mouth_mode": "お喋り口モードを設定 {'talking_mouth_mode': true}",
+                    "POST /mouth_pattern": "口パターンを設定 {'mouth_pattern': 'mouth_a'}",
                     "POST /api/blink": "瞬き設定 {'enabled': true, 'interval': 3.0}",
                     "POST /api/reset": "全設定をリセット"
                 }
@@ -256,6 +276,26 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
                 "message": f"お喋り口モードを {'有効' if talking_mouth_mode else '無効'} に設定しました"
             })
         
+        elif path == '/mouth_pattern':
+            # 口パターン設定
+            mouth_pattern = data.get('mouth_pattern')
+            if mouth_pattern is None:
+                self._send_response(400, {"status": "error", "message": "mouth_patternパラメータが必要です"})
+                return
+            
+            if self.controller.set_mouth_pattern(mouth_pattern):
+                self._send_response(200, {
+                    "status": "success",
+                    "message": f"口パターンを {mouth_pattern} に設定しました"
+                })
+            else:
+                valid_patterns = [None, "mouth_a", "mouth_i", "mouth_o"]
+                self._send_response(400, {
+                    "status": "error",
+                    "message": f"無効な口パターン: {mouth_pattern}",
+                    "valid_patterns": valid_patterns
+                })
+        
         elif path == '/api/blink':
             # 瞬き設定
             enabled = data.get('enabled', True)
@@ -272,6 +312,7 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
             self.controller.set_expression(ExpressionMode.NEUTRAL)
             self.controller.set_display_mode(DisplayMode.FACE)
             self.controller.set_talking_mouth_mode(False)
+            self.controller.set_mouth_pattern(None)
             self.controller.set_blinking(True, 3.0)
             
             self._send_response(200, {
@@ -290,9 +331,11 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
             'GET /expression',
             'GET /display_mode', 
             'GET /talking_mouth_mode',
+            'GET /mouth_pattern',
             'OPTIONS /expression',
             'OPTIONS /display_mode',
-            'OPTIONS /talking_mouth_mode'
+            'OPTIONS /talking_mouth_mode',
+            'OPTIONS /mouth_pattern'
         ]):
             return  # ログを出力しない
         
@@ -321,17 +364,23 @@ def main():
     logger.info("  GET  /expression - 現在の表情を取得")
     logger.info("  GET  /display_mode - 現在の表示モードを取得")
     logger.info("  GET  /talking_mouth_mode - 現在のお喋り口モードを取得")
+    logger.info("  GET  /mouth_pattern - 現在の口パターンを取得")
     logger.info("  POST /expression - 表情モードを設定")
     logger.info("  POST /display_mode - 表示モードを設定")
     logger.info("  POST /talking_mouth_mode - お喋り口モードを設定")
+    logger.info("  POST /mouth_pattern - 口パターンを設定")
     logger.info("  POST /api/blink - 瞬き設定")
     logger.info("  POST /api/reset - 設定リセット")
     logger.info("\n使用例:")
     logger.info("  curl -X POST http://localhost:8080/expression -H 'Content-Type: application/json' -d '{\"expression\": \"happy\"}'")
     logger.info("  curl -X POST http://localhost:8080/talking_mouth_mode -H 'Content-Type: application/json' -d '{\"talking_mouth_mode\": true}'")
+    logger.info("  curl -X POST http://localhost:8080/mouth_pattern -H 'Content-Type: application/json' -d '{\"mouth_pattern\": \"mouth_a\"}'")
     logger.info("  curl http://localhost:8080/expression")
     logger.info("\nサーバー起動後の手動制御:")
     logger.info("  コンソールで 'D' + Enter : お喋りモード切り替え")
+    logger.info("  コンソールで 'Z' + Enter : mouth_a (あ) パターン")
+    logger.info("  コンソールで 'X' + Enter : mouth_i (い) パターン") 
+    logger.info("  コンソールで 'C' + Enter : mouth_o (お) パターン")
     logger.info("  コンソールで '1-9' + Enter : 表情変更")
     logger.info("    1: neutral  2: happy    3: angry    4: sad      5: surprised")
     logger.info("    6: crying   7: hurt     8: wink     9: mouth3   0: pien")
@@ -386,6 +435,21 @@ def main():
                     controller.set_expression(expression)
                     logger.info(f"😊 手動制御: 表情を {expression} に変更")
                     
+                elif command == 'Z':
+                    # mouth_a パターン
+                    controller.set_mouth_pattern('mouth_a')
+                    logger.info("👄 手動制御: 口パターンを mouth_a (あ) に変更")
+                    
+                elif command == 'X':
+                    # mouth_i パターン
+                    controller.set_mouth_pattern('mouth_i')
+                    logger.info("👄 手動制御: 口パターンを mouth_i (い) に変更")
+                    
+                elif command == 'C':
+                    # mouth_o パターン
+                    controller.set_mouth_pattern('mouth_o')
+                    logger.info("👄 手動制御: 口パターンを mouth_o (お) に変更")
+                    
                 elif command == 'A':
                     # 全表情デモ（別スレッドで実行）
                     demo_thread = threading.Thread(target=show_all_expressions, daemon=True)
@@ -396,6 +460,7 @@ def main():
                     controller.set_expression(ExpressionMode.NEUTRAL)
                     controller.set_display_mode(DisplayMode.FACE)
                     controller.set_talking_mouth_mode(False)
+                    controller.set_mouth_pattern(None)
                     controller.set_blinking(True, 3.0)
                     logger.info("🔄 手動制御: 全設定をリセットしました")
                     
@@ -406,6 +471,7 @@ def main():
                     logger.info(f"  表情: {status['expression']}")
                     logger.info(f"  表示モード: {status['display_mode']}")
                     logger.info(f"  お喋りモード: {'有効' if status['talking_mouth_mode'] else '無効'}")
+                    logger.info(f"  口パターン: {status['mouth_pattern'] or 'なし'}")
                     logger.info(f"  瞬き: {'有効' if status['is_blinking'] else '無効'} (間隔: {status['blink_interval']}秒)")
                     
                 elif command == 'Q':
@@ -417,6 +483,9 @@ def main():
                     # ヘルプ表示
                     logger.info("📖 利用可能なコマンド:")
                     logger.info("  D: お喋りモード切り替え")
+                    logger.info("  Z: mouth_a (あ) パターン")
+                    logger.info("  X: mouth_i (い) パターン")
+                    logger.info("  C: mouth_o (お) パターン")
                     logger.info("  1-9,0: 表情変更 (1:neutral, 2:happy, 3:angry, 4:sad, 5:surprised, 6:crying, 7:hurt, 8:wink, 9:mouth3, 0:pien)")
                     logger.info("  A: 全表情デモ")
                     logger.info("  R: 設定リセット")

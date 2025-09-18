@@ -1,5 +1,6 @@
 import { FacialExpression } from '../types/FaceAnimationTypes';
 import { TalkingMode } from './TalkingMode';
+import { MouthPatternController } from './MouthPatternController';
 
 export class KeyboardHandler {
   private displayMode: string;
@@ -18,6 +19,8 @@ export class KeyboardHandler {
   private lastActionTimeRef: React.MutableRefObject<number>;
   private togglePictureInPicture?: () => void;
   private talkingMode: TalkingMode;
+  private mouthPatternController: MouthPatternController;
+  private sendMouthPatternToRos2?: (pattern: string) => Promise<void>;
 
   constructor(config: {
     displayMode: string;
@@ -35,6 +38,7 @@ export class KeyboardHandler {
     savedMousePositionRef: React.MutableRefObject<{ x: number, y: number } | null>;
     lastActionTimeRef: React.MutableRefObject<number>;
     togglePictureInPicture?: () => void;
+    sendMouthPatternToRos2?: (pattern: string) => Promise<void>;
   }) {
     this.displayMode = config.displayMode;
     this.onDisplayModeToggle = config.onDisplayModeToggle;
@@ -51,7 +55,9 @@ export class KeyboardHandler {
     this.savedMousePositionRef = config.savedMousePositionRef;
     this.lastActionTimeRef = config.lastActionTimeRef;
     this.togglePictureInPicture = config.togglePictureInPicture;
+    this.sendMouthPatternToRos2 = config.sendMouthPatternToRos2;
     this.talkingMode = new TalkingMode();
+    this.mouthPatternController = new MouthPatternController();
   }
 
   public handleKeyPress = (p5: any): boolean => {
@@ -73,6 +79,12 @@ export class KeyboardHandler {
       this.handleTalkingModeToggle();
     } else if (p5.key === 'd' || p5.key === 'D') {
       this.handleRandomTalkingModeToggle();
+    } else if (p5.key === 'z' || p5.key === 'Z') {
+      this.handleMouthPatternChange('mouth_a');
+    } else if (p5.key === 'x' || p5.key === 'X') {
+      this.handleMouthPatternChange('mouth_i');
+    } else if (p5.key === 'c' || p5.key === 'C') {
+      this.handleMouthPatternChange('mouth_o');
     } else if (p5.key === '0') {
       this.setManualExpression('pien');
     } else if (this.displayMode === 'face' && p5.key >= '1' && p5.key <= '9') {
@@ -137,8 +149,26 @@ export class KeyboardHandler {
     this.talkingMode.toggle(true);
   }
 
+  private handleMouthPatternChange(pattern: 'mouth_a' | 'mouth_i' | 'mouth_o') {
+    console.log(`${pattern}キー: 口パターンを${pattern}に変更`);
+    
+    // 口パターンコントローラーで口だけを制御
+    this.mouthPatternController.setMouthPattern(pattern);
+    
+    // HTTPサーバーにも口パターンを送信
+    if (this.sendMouthPatternToRos2) {
+      this.sendMouthPatternToRos2(pattern).catch(error => {
+        console.warn('口パターン送信失敗:', error);
+      });
+    }
+  }
+
   public getTalkingMode(): TalkingMode {
     return this.talkingMode;
+  }
+
+  public getMouthPatternController(): MouthPatternController {
+    return this.mouthPatternController;
   }
 
   private handleExpressionChange(key: string) {

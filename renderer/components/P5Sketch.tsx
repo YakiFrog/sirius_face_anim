@@ -7,6 +7,7 @@ import { EyeTapManager } from '../utils/EyeTapManager';
 import { FaceRenderer } from '../utils/FaceRenderer';
 import { InteractionHandler } from '../utils/InteractionHandler';
 import { KeyboardHandler } from '../utils/KeyboardHandler';
+import { MouthPatternController } from '../utils/MouthPatternController';
 
 // p5はクライアントサイドでのみ実行されるため、dynamic importを使用
 const Sketch = dynamic(() => import('react-p5').then((mod) => mod.default), {
@@ -368,7 +369,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       ),
       savedMousePositionRef,
       lastActionTimeRef,
-      togglePictureInPicture
+      togglePictureInPicture,
+      sendMouthPatternToRos2: (pattern) => ros2Connection.current?.setMouthPattern(pattern) || Promise.resolve()
     });
   }, []);
 
@@ -384,7 +386,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         setConnectionStatus,
         displayMode,
         onDisplayModeToggle,
-        keyboardHandler.current?.getTalkingMode()
+        keyboardHandler.current?.getTalkingMode(),
+        keyboardHandler.current?.getMouthPatternController()
       );
     }
     
@@ -654,7 +657,33 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     
     // 顔の各パーツを描画
     drawEyes(p5, eyeParams);
-    drawMouth(p5, eyeParams);
+    
+    // 口パターンの決定（目の表情とは独立）
+    const talkingMode = keyboardHandler.current?.getTalkingMode();
+    const mouthPatternController = keyboardHandler.current?.getMouthPatternController();
+    let mouthExpression = expression; // デフォルトは元の表情
+    let mouthBounceScale = 1.0;
+    
+    // 優先順位: おしゃべりモード > 口パターンコントローラー > 通常の表情
+    if (talkingMode?.getIsActive()) {
+      // おしゃべりモードがアクティブな場合
+      const mouthPattern = talkingMode.getCurrentMouthPattern();
+      mouthExpression = mouthPattern as any;
+      mouthBounceScale = talkingMode.getBounceScale();
+    } else if (mouthPatternController?.getIsActive()) {
+      // 口パターンコントローラーがアクティブな場合
+      const mouthPattern = mouthPatternController.getCurrentMouthPattern();
+      mouthExpression = mouthPattern as any;
+      mouthBounceScale = mouthPatternController.getBounceScale();
+    } else if (talkingMode?.getIsBouncing()) {
+      // おしゃべりモード終了時のバウンスアニメーション
+      mouthBounceScale = talkingMode.getBounceScale();
+    } else if (mouthPatternController?.getIsBouncing()) {
+      // 口パターンコントローラー終了時のバウンスアニメーション
+      mouthBounceScale = mouthPatternController.getBounceScale();
+    }
+    
+    drawMouth(p5, eyeParams, mouthExpression, mouthBounceScale);
     
     // 涙の描画（おしゃべりモード中でも元の表情がcryingなら涙を描画）
     if (expression === 'crying') {
@@ -1233,7 +1262,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
   };
 
   // 口を描画する関数
-  const drawMouth = (p5, params) => {
+  const drawMouth = (p5, params, mouthExpression = expression, mouthBounceScale = 1.0) => {
     const mouthWidth = params.eyeSize * 1.5;
     const mouthHeight = params.eyeSize * 0.4;
     
@@ -1303,21 +1332,21 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     };
 
     // おしゃべりモードの場合は特別処理
-    const talkingMode = keyboardHandler.current?.getTalkingMode();
-    let currentExpression = expression;
-    let bounceScale = 1.0;
+    // const talkingMode = keyboardHandler.current?.getTalkingMode();
+    // let currentExpression = expression;
+    // let bounceScale = 1.0;
     
-    if (talkingMode?.getIsActive()) {
-      const mouthPattern = talkingMode.getCurrentMouthPattern();
-      currentExpression = mouthPattern as any; // 一時的にキャスト
-      bounceScale = talkingMode.getBounceScale();
-    } else if (talkingMode?.getIsBouncing()) {
-      // おしゃべりモード終了時のバウンスアニメーション
-      bounceScale = talkingMode.getBounceScale();
-    }
+    // if (talkingMode?.getIsActive()) {
+    //   const mouthPattern = talkingMode.getCurrentMouthPattern();
+    //   currentExpression = mouthPattern as any; // 一時的にキャスト
+    //   bounceScale = talkingMode.getBounceScale();
+    // } else if (talkingMode?.getIsBouncing()) {
+    //   // おしゃべりモード終了時のバウンスアニメーション
+    //   bounceScale = talkingMode.getBounceScale();
+    // }
 
     // 表情による口の位置調整
-    switch (currentExpression) {
+    switch (mouthExpression) {
       case 'neutral':
         mouthY -= params.eyeSize * 0.06;
         break;
@@ -1360,10 +1389,10 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
     }
     
     // 表情に応じた口の描画
-    switch (currentExpression) {
+    switch (mouthExpression) {
       case 'neutral':
-        const naturalMouthWidth = mouthWidth * 0.8 * bounceScale;
-        const naturalMouthHeight = mouthHeight * bounceScale;
+        const naturalMouthWidth = mouthWidth * 0.8 * mouthBounceScale;
+        const naturalMouthHeight = mouthHeight * mouthBounceScale;
         p5.beginShape();
         p5.vertex(p5.width / 2 - naturalMouthWidth / 2, mouthY);
         p5.bezierVertex(
@@ -1378,8 +1407,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'happy':
-        const happyMouthWidth = mouthWidth * 0.8 * bounceScale;
-        const happyMouthHeight = mouthHeight * bounceScale;
+        const happyMouthWidth = mouthWidth * 0.8 * mouthBounceScale;
+        const happyMouthHeight = mouthHeight * mouthBounceScale;
         p5.beginShape();
         p5.vertex(p5.width / 2 - happyMouthWidth / 2, mouthY);
         p5.bezierVertex(
@@ -1394,8 +1423,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'angry':
-        const angryMouthWidth = mouthWidth * 0.75 * bounceScale;
-        const angryMouthHeight = mouthHeight * bounceScale;
+        const angryMouthWidth = mouthWidth * 0.75 * mouthBounceScale;
+        const angryMouthHeight = mouthHeight * mouthBounceScale;
         p5.beginShape();
         p5.vertex(p5.width / 2 - angryMouthWidth / 2, mouthY + angryMouthHeight * 0.5);
         p5.bezierVertex(
@@ -1412,8 +1441,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'sad':
       case 'crying':
         p5.beginShape();
-        const sadMouthWidth = mouthWidth * 0.75 * bounceScale;
-        const sadMouthHeight = mouthHeight * bounceScale;
+        const sadMouthWidth = mouthWidth * 0.75 * mouthBounceScale;
+        const sadMouthHeight = mouthHeight * mouthBounceScale;
         p5.vertex(p5.width / 2 - sadMouthWidth / 2, mouthY - sadMouthHeight * 0.3);
         p5.bezierVertex(
           p5.width / 2 - sadMouthWidth / 4, 
@@ -1428,8 +1457,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'surprised':
         p5.beginShape();
-        const surprisedMouthWidth = mouthWidth * 0.35 * bounceScale;
-        const surprisedMouthHeight = mouthHeight * 2.5 * bounceScale;
+        const surprisedMouthWidth = mouthWidth * 0.35 * mouthBounceScale;
+        const surprisedMouthHeight = mouthHeight * 2.5 * mouthBounceScale;
         
         p5.noStroke();
         p5.fill(255);
@@ -1455,8 +1484,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'wink':
         p5.beginShape();
-        const winkMouthWidth = mouthWidth * 0.55 * bounceScale;
-        const winkMouthHeight = mouthHeight * bounceScale;
+        const winkMouthWidth = mouthWidth * 0.55 * mouthBounceScale;
+        const winkMouthHeight = mouthHeight * mouthBounceScale;
         const leftY = mouthY + winkMouthHeight * 0.45;
         p5.vertex(p5.width / 2 - winkMouthWidth / 2, leftY);
         
@@ -1474,8 +1503,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'mouth3':
-        const mouth3Width = mouthWidth * 0.6 * bounceScale;
-        const mouth3Height = mouthHeight * 1.15 * bounceScale;
+        const mouth3Width = mouthWidth * 0.6 * mouthBounceScale;
+        const mouth3Height = mouthHeight * 1.15 * mouthBounceScale;
         
         p5.beginShape();
         p5.noFill();
@@ -1502,8 +1531,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
       case 'pien':
         p5.beginShape();
-        const pienMouthWidth = mouthWidth * 0.55 * bounceScale;
-        const pienMouthHeight = mouthHeight * bounceScale;
+        const pienMouthWidth = mouthWidth * 0.55 * mouthBounceScale;
+        const pienMouthHeight = mouthHeight * mouthBounceScale;
         const pienMouthY = mouthY + pienMouthHeight * 0.2;
         // 口の両端の丸みを保つため、正確な中心位置を計算
         const pienCenterX = p5.width / 2;
@@ -1520,8 +1549,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         break;
         
       case 'hurt':
-        const hurtMouthWidth = mouthWidth * 0.6 * bounceScale;
-        const hurtMouthHeight = mouthHeight * bounceScale;
+        const hurtMouthWidth = mouthWidth * 0.6 * mouthBounceScale;
+        const hurtMouthHeight = mouthHeight * mouthBounceScale;
         
         p5.beginShape();
         p5.noFill();
@@ -1558,7 +1587,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         const aScaleY = aSettings.scaleY;
         
         // バウンス効果を適用
-        const aBounceScale = talkingMode?.getBounceScale() || 1.0;
+        const aBounceScale = mouthBounceScale;
         
         const aMouthWidth = mouthWidth * 0.6 * aScaleX * aBounceScale;
         const aMouthHeight = mouthHeight * 0.9 * aScaleY * aBounceScale;
@@ -1618,7 +1647,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         const iScaleY = iSettings.scaleY;
         
         // バウンス効果を適用
-        const iBounceScale = talkingMode?.getBounceScale() || 1.0;
+        const iBounceScale = mouthBounceScale;
         
         p5.stroke(255);
         p5.strokeWeight(strokeWeight * 0.9 * iScaleY * iBounceScale);
@@ -1650,7 +1679,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         const oScaleY = oSettings.scaleY;
         
         // バウンス効果を適用
-        const oBounceScale = talkingMode?.getBounceScale() || 1.0;
+        const oBounceScale = mouthBounceScale;
         
         p5.noStroke();
         p5.fill(255);
@@ -1866,6 +1895,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       expressionManager.current?.cleanup();
       eyeTapManager.current?.cleanup();
       interactionHandler.current?.cleanup();
+      keyboardHandler.current?.getTalkingMode()?.cleanup();
+      keyboardHandler.current?.getMouthPatternController()?.cleanup();
       
       if (strokingTimerRef.current) clearInterval(strokingTimerRef.current);
       if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
