@@ -154,7 +154,23 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
         path = url_parts.path
         query_params = parse_qs(url_parts.query)
         
-        if path == '/status':
+        if path == '/api/health':
+            # ヘルスチェックエンドポイント
+            status = self.controller.get_status()
+            self._send_response(200, {
+                "status": "healthy",
+                "timestamp": time.time(),
+                "server": "face_animation_controller",
+                "version": "1.0.0",
+                "current_state": {
+                    "expression": status["expression"],
+                    "display_mode": status["display_mode"],
+                    "talking_mouth_mode": status["talking_mouth_mode"],
+                    "mouth_pattern": status["mouth_pattern"]
+                }
+            })
+            
+        elif path == '/status':
             # 現在の状態を取得
             status = self.controller.get_status()
             self._send_response(200, {"status": "success", "data": status})

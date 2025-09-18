@@ -19,6 +19,12 @@ export class ROS2Connection {
   private maxConsecutiveErrors: number = 5;
   private backoffMultiplier: number = 1;
   
+  // ログ制御用の設定
+  private lastErrorLogTime: number = 0;
+  private errorLogInterval: number = 5000; // 5秒に1回までエラーログ出力
+  private totalErrorCount: number = 0;
+  private maxErrorsBeforeStop: number = 50; // 50回エラーで一時停止
+  
   // リクエストキャッシュ（冗長リクエスト防止）
   private requestCache: Map<string, { data: any; timestamp: number }> = new Map();
   private cacheTimeout: number = 200; // 200msキャッシュ
@@ -26,6 +32,37 @@ export class ROS2Connection {
   constructor(enableRos2Connection: boolean, ros2HttpUrl: string) {
     this.enableRos2Connection = enableRos2Connection;
     this.ros2HttpUrl = ros2HttpUrl;
+    
+    // 初期化時に接続チェック
+    if (enableRos2Connection) {
+      this.checkServerHealth();
+    }
+  }
+
+  // サーバーの健全性チェック
+  private async checkServerHealth(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000); // 1秒タイムアウト
+      
+      const response = await fetch(`${this.ros2HttpUrl}/api/health`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        console.log('✅ ROS2サーバー接続確認完了');
+        return true;
+      } else {
+        console.warn('⚠️ ROS2サーバーが異常な状態です');
+        return false;
+      }
+    } catch (error) {
+      console.warn('⚠️ ROS2サーバーが起動していないか、接続できません。main.pyを起動してください。');
+      return false;
+    }
   }
 
   public startConnection(
@@ -49,6 +86,7 @@ export class ROS2Connection {
     console.log(`🚀 高速ROS2接続開始: ${this.ros2HttpUrl} (${this.fastPollingInterval}ms間隔)`);
     this.isPollingActive = true;
     this.consecutiveErrors = 0;
+    this.totalErrorCount = 0; // エラーカウンタをリセット
 
     // 初回取得
     this.fetchExpression(manualExpressionRef, eyeOverTapReactionRef, eyeOverTapReactionStartTime, setExpression, setIsConnected, setConnectionStatus);
@@ -58,6 +96,21 @@ export class ROS2Connection {
 
     // 高速ポーリング開始
     this.pollingInterval = setInterval(() => {
+      // エラーが多すぎる場合は一時的にスキップ
+      if (this.totalErrorCount > this.maxErrorsBeforeStop) {
+        // 10秒後にリセットして再試行
+        if (this.totalErrorCount === this.maxErrorsBeforeStop + 1) {
+          setTimeout(() => {
+            console.log('🔄 接続エラーカウンタをリセットして再試行します');
+            this.totalErrorCount = 0;
+            this.consecutiveErrors = 0;
+            this.backoffMultiplier = 1;
+          }, 10000);
+          this.totalErrorCount++; // フラグとして増加
+        }
+        return;
+      }
+      
       const currentInterval = this.fastPollingInterval * this.backoffMultiplier;
       
       Promise.all([
@@ -83,6 +136,13 @@ export class ROS2Connection {
       clearInterval(this.pollingInterval);
     }
     this.requestCache.clear();
+    
+    // エラーカウンタもリセット
+    this.consecutiveErrors = 0;
+    this.totalErrorCount = 0;
+    this.backoffMultiplier = 1;
+    
+    console.log('🛑 ROS2接続を停止しました（エラーカウンタもリセット）');
   }
 
   private cleanupCache() {
@@ -110,6 +170,11 @@ export class ROS2Connection {
       return cached.data;
     }
 
+    // エラーが多すぎる場合は一時停止
+    if (this.totalErrorCount > this.maxErrorsBeforeStop) {
+      throw new Error('Too many consecutive errors - temporarily stopped');
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
@@ -131,18 +196,24 @@ export class ROS2Connection {
         // エラーカウンタをリセット
         this.consecutiveErrors = 0;
         this.backoffMultiplier = 1;
+        this.totalErrorCount = 0; // 成功時にリセット
         
         return data;
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (error) {
-      this.handleRequestError();
+      this.handleRequestError(url, error);
       throw error;
     }
   }
 
   private async postWithTimeout(url: string, body: any): Promise<boolean> {
+    // エラーが多すぎる場合は一時停止
+    if (this.totalErrorCount > this.maxErrorsBeforeStop) {
+      return false;
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
@@ -159,21 +230,41 @@ export class ROS2Connection {
       if (response.ok) {
         this.consecutiveErrors = 0;
         this.backoffMultiplier = 1;
+        this.totalErrorCount = 0; // 成功時にリセット
         return true;
       } else {
-        this.handleRequestError();
+        this.handleRequestError(url, new Error(`HTTP ${response.status}`));
         return false;
       }
     } catch (error) {
-      this.handleRequestError();
+      this.handleRequestError(url, error);
       return false;
     }
   }
 
-  private handleRequestError() {
+  private handleRequestError(url?: string, error?: any) {
     this.consecutiveErrors++;
+    this.totalErrorCount++;
+    
     if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
       this.backoffMultiplier = Math.min(this.backoffMultiplier * 2, 8); // 最大8倍まで
+    }
+
+    // ログ出力の制御（5秒に1回まで）
+    const now = Date.now();
+    if (now - this.lastErrorLogTime > this.errorLogInterval) {
+      console.warn(`🔗 ROS2接続エラー (${this.totalErrorCount}回目):`, {
+        url: url?.replace(this.ros2HttpUrl, '') || 'unknown',
+        consecutiveErrors: this.consecutiveErrors,
+        backoffMultiplier: this.backoffMultiplier,
+        errorType: error?.name || 'Unknown'
+      });
+      this.lastErrorLogTime = now;
+      
+      // エラーが多すぎる場合は警告
+      if (this.totalErrorCount === this.maxErrorsBeforeStop) {
+        console.warn(`⚠️ 接続エラーが${this.maxErrorsBeforeStop}回に達しました。一時的にリクエストを停止します。`);
+      }
     }
   }
 
@@ -208,6 +299,7 @@ export class ROS2Connection {
     } catch (error) {
       setIsConnected(false);
       setConnectionStatus('切断');
+      // エラーログは handleRequestError で制御される
     }
   }
 
