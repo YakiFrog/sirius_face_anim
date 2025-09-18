@@ -1284,54 +1284,54 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       // scaleX: 横幅の調整倍数
       // scaleY: 縦幅の調整倍数
       neutral: { 
-        mouth_a: { yOffset: -0.08, scaleX: 0.8, scaleY: 0.8 }, 
-        mouth_i: { yOffset: -0.12, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.07, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: 0.00, scaleX: 0.8, scaleY: 0.8 }, 
+        mouth_i: { yOffset: 0.00, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: 0.00, scaleX: 0.9, scaleY: 0.7 } 
       },
       happy: { 
-        mouth_a: { yOffset: -0.21, scaleX: 0.8, scaleY: 0.8 }, 
-        mouth_i: { yOffset: -0.25, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.2, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: -0.15, scaleX: 0.8, scaleY: 0.8 }, 
+        mouth_i: { yOffset: -0.15, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: -0.15, scaleX: 0.9, scaleY: 0.7 } 
       },
       angry: { 
-        mouth_a: { yOffset: -0.01, scaleX: 0.8, scaleY: 0.7 }, 
-        mouth_i: { yOffset: -0.04, scaleX: 0.7, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.04, scaleX: 0.8, scaleY: 0.6 } 
+        mouth_a: { yOffset: 0.07, scaleX: 0.8, scaleY: 0.8 }, 
+        mouth_i: { yOffset: 0.15, scaleX: 0.8, scaleY: -1.0 }, 
+        mouth_o: { yOffset: 0.07, scaleX: 0.9, scaleY: 0.7 } 
       },
       sad: { 
-        mouth_a: { yOffset: -0.04, scaleX: 0.8, scaleY: 0.7 }, 
-        mouth_i: { yOffset: -0.08, scaleX: 0.9, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.03, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: 0.00, scaleX: 0.8, scaleY: 0.7 }, 
+        mouth_i: { yOffset: 0.00, scaleX: 0.9, scaleY: 1.0 }, 
+        mouth_o: { yOffset: 0.00, scaleX: 0.9, scaleY: 0.7 } 
       },
       surprised: { 
-        mouth_a: { yOffset: 0.03, scaleX: 0.6, scaleY: 0.8 }, 
-        mouth_i: { yOffset: -0.01, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: 0.08, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: 0.10, scaleX: 0.7, scaleY: 0.9 }, 
+        mouth_i: { yOffset: 0.10, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: 0.10, scaleX: 0.9, scaleY: 0.7 } 
       },
       crying: { 
-        mouth_a: { yOffset: -0.10, scaleX: 0.8, scaleY: 0.7 }, 
-        mouth_i: { yOffset: -0.14, scaleX: 0.9, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.09, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: -0.05, scaleX: 0.8, scaleY: 0.7 }, 
+        mouth_i: { yOffset: -0.05, scaleX: 0.9, scaleY: 1.0 }, 
+        mouth_o: { yOffset: -0.05, scaleX: 0.9, scaleY: 0.7 } 
       },
       hurt: { 
-        mouth_a: { yOffset: -0.09, scaleX: 0.8, scaleY: 0.7 }, 
-        mouth_i: { yOffset: -0.13, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.08, scaleX: 0.8, scaleY: 0.6 } 
+        mouth_a: { yOffset: -0.05, scaleX: 0.8, scaleY: 0.7 }, 
+        mouth_i: { yOffset: -0.05, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: -0.05, scaleX: 0.8, scaleY: 0.6 } 
       },
       wink: { 
-        mouth_a: { yOffset: -0.06, scaleX: 0.7, scaleY: 0.8 }, 
-        mouth_i: { yOffset: -0.10, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.1, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: -0.05, scaleX: 0.7, scaleY: 0.8 }, 
+        mouth_i: { yOffset: -0.05, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: -0.05, scaleX: 0.9, scaleY: 0.7 } 
       },
       mouth3: { 
-        mouth_a: { yOffset: 0.01, scaleX: 0.8, scaleY: 0.7 }, 
-        mouth_i: { yOffset: -0.03, scaleX: 0.8, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.03, scaleX: 0.9, scaleY: 0.7 } 
+        mouth_a: { yOffset: 0.05, scaleX: 0.7, scaleY: 0.8 }, 
+        mouth_i: { yOffset: 0.05, scaleX: 0.8, scaleY: 1.0 }, 
+        mouth_o: { yOffset: 0.05, scaleX: 0.9, scaleY: 0.7 } 
       },
       pien: { 
-        mouth_a: { yOffset: -0.05, scaleX: 0.6, scaleY: 0.8 }, 
-        mouth_i: { yOffset: -0.09, scaleX: 0.7, scaleY: 1.0 }, 
-        mouth_o: { yOffset: -0.06, scaleX: 0.8, scaleY: 0.4 } 
+        mouth_a: { yOffset: 0.07, scaleX: 0.6, scaleY: 0.7 }, 
+        mouth_i: { yOffset: 0.07, scaleX: 0.7, scaleY: 0.9 }, 
+        mouth_o: { yOffset: 0.07, scaleX: 0.8, scaleY: 0.6 } 
       }
     };
 
@@ -1585,8 +1585,8 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
       case 'mouth_a':
         // 「あ」の口 - 三日月風（お椀を逆様にした形）
         // 現在の表情に応じた調整設定を取得
-        const aSettings = talkingMouthSettings[expression]?.mouth_a || { yOffset: 0.02, scaleX: 1.0, scaleY: 1.0 };
-        const aMouthYOffset = params.eyeSize * aSettings.yOffset;
+        const aSettings = talkingMouthSettings[expression]?.mouth_a || { yOffset: 0.00, scaleX: 1.0, scaleY: 1.0 };
+        const aMouthYOffset = params.eyeSize * aSettings.yOffset - 0.07 * params.eyeSize;
         const aScaleX = aSettings.scaleX;
         const aScaleY = aSettings.scaleY;
         
@@ -1596,9 +1596,9 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         const aMouthWidth = mouthWidth * 0.7 * aScaleX * aBounceScale;
         const aMouthHeight = mouthHeight * 0.9 * aScaleY * aBounceScale;
 
-        const a = 2.65; // 口の横開き具合（でかいほど小さくなる）
-        const b = 0.3; // 口の縦(上側)の高さ
-        const c = 1.1; // 口の縦(下側)の高さ
+        const a = 2.2; // 口の横開き具合（でかいほど小さくなる） best:2.2
+        const b = 0.3; // 口の縦(上側)の高さ best:0.3
+        const c = 1.1; // 口の縦(下側)の高さ best:1.1
         
         // 内側を白で埋める
         p5.fill(255);
@@ -1646,7 +1646,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         // 「い」の口 - 少し下に弛んだ横線
         // 現在の表情に応じた調整設定を取得
         const iSettings = talkingMouthSettings[expression]?.mouth_i || { yOffset: 0.0, scaleX: 1.0, scaleY: 1.0 };
-        const iMouthYOffset = params.eyeSize * iSettings.yOffset;
+        const iMouthYOffset = params.eyeSize * iSettings.yOffset - 0.13 * params.eyeSize;
         const iScaleX = iSettings.scaleX;
         const iScaleY = iSettings.scaleY;
         
@@ -1699,7 +1699,7 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         // 「お」の口 - 小さな丸
         // 現在の表情に応じた調整設定を取得
         const oSettings = talkingMouthSettings[expression]?.mouth_o || { yOffset: -0.02, scaleX: 1.0, scaleY: 1.0 };
-        const oMouthYOffset = params.eyeSize * oSettings.yOffset;
+        const oMouthYOffset = params.eyeSize * oSettings.yOffset - 0.07 * params.eyeSize;
         const oScaleX = oSettings.scaleX;
         const oScaleY = oSettings.scaleY;
         
@@ -1708,13 +1708,13 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         
         p5.noStroke();
         p5.fill(255);
-        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35 * oScaleX * oBounceScale, mouthHeight * 1.5 * oScaleY * oBounceScale);
+        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35 * oScaleX * oBounceScale, mouthHeight * 1.4 * oScaleY * oBounceScale);
         
         // 白い縁を描画
         p5.stroke(255);
         p5.strokeWeight(strokeWeight * 0.8);
         p5.noFill();
-        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35 * oScaleX * oBounceScale, mouthHeight * 1.5 * oScaleY * oBounceScale);
+        p5.ellipse(p5.width / 2, mouthY + oMouthYOffset, mouthWidth * 0.35 * oScaleX * oBounceScale, mouthHeight * 1.4 * oScaleY * oBounceScale);
         break;
     }
     
