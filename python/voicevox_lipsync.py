@@ -817,3 +817,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python3 voicevox_lipsync.py --model ./voicevox_core/models/vvms/10.vvm --style-id 42 --speed 1.0 --pitch 0.0 --intonation 1.0
