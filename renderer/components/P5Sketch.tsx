@@ -1593,12 +1593,12 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         // バウンス効果を適用
         const aBounceScale = mouthBounceScale;
         
-        const aMouthWidth = mouthWidth * 0.6 * aScaleX * aBounceScale;
+        const aMouthWidth = mouthWidth * 0.7 * aScaleX * aBounceScale;
         const aMouthHeight = mouthHeight * 0.9 * aScaleY * aBounceScale;
 
-        const a = 2.5; // 口の横開き具合（でかいほど小さくなる）
-        const b = 0.4; // 口の縦
-        const c = 0.8; // 口の縦
+        const a = 2.65; // 口の横開き具合（でかいほど小さくなる）
+        const b = 0.3; // 口の縦(上側)の高さ
+        const c = 1.1; // 口の縦(下側)の高さ
         
         // 内側を白で埋める
         p5.fill(255);
@@ -1654,23 +1654,44 @@ export const P5Sketch: React.FC<P5SketchProps> = ({
         const iBounceScale = mouthBounceScale;
         
         p5.stroke(255);
-        p5.strokeWeight(strokeWeight * 0.9 * iScaleY * iBounceScale);
+        p5.strokeWeight(strokeWeight * 1.0 * iScaleY * iBounceScale);
         p5.noFill();
         
         // 少し下に弛んだ曲線を描画
-        const iMouthWidth = mouthWidth * 0.3 * iScaleX * iBounceScale;
-        const sagAmount = mouthHeight * 0.15 * iScaleY * iBounceScale; // 弛み具合
-        
+        const iMouthWidth = mouthWidth * 0.35 * iScaleX * iBounceScale;
+        const sagAmount = mouthHeight * 0.4 * iScaleY * iBounceScale; // 弛み具合
+      
         p5.beginShape();
         p5.vertex(p5.width / 2 - iMouthWidth, mouthY + iMouthYOffset);
+        // 左側の制御点
         p5.bezierVertex(
+          p5.width / 2 - iMouthWidth * 0.75, 
+          mouthY + iMouthYOffset + sagAmount * 0.75,
           p5.width / 2 - iMouthWidth / 3, 
           mouthY + iMouthYOffset + sagAmount,
+          p5.width / 2, 
+          mouthY + iMouthYOffset + sagAmount * 1
+        );
+        // 右側の制御点
+        p5.bezierVertex(
           p5.width / 2 + iMouthWidth / 3, 
           mouthY + iMouthYOffset + sagAmount,
+          p5.width / 2 + iMouthWidth * 0.75, 
+          mouthY + iMouthYOffset + sagAmount * 0.75,
           p5.width / 2 + iMouthWidth, 
           mouthY + iMouthYOffset
         );
+        
+        // p5.beginShape();
+        // p5.vertex(p5.width / 2 - iMouthWidth, mouthY + iMouthYOffset);
+        // p5.bezierVertex(
+        //   p5.width / 2 - iMouthWidth / 3, 
+        //   mouthY + iMouthYOffset + sagAmount,
+        //   p5.width / 2 + iMouthWidth / 3, 
+        //   mouthY + iMouthYOffset + sagAmount,
+        //   p5.width / 2 + iMouthWidth, 
+        //   mouthY + iMouthYOffset
+        // );
         p5.endShape();
         break;
         

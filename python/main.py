@@ -279,14 +279,16 @@ class FaceAnimationHandler(BaseHTTPRequestHandler):
         elif path == '/mouth_pattern':
             # 口パターン設定
             mouth_pattern = data.get('mouth_pattern')
-            if mouth_pattern is None:
+            # mouth_patternキーが存在しない場合のみエラーとする（Noneは有効な値）
+            if 'mouth_pattern' not in data:
                 self._send_response(400, {"status": "error", "message": "mouth_patternパラメータが必要です"})
                 return
             
             if self.controller.set_mouth_pattern(mouth_pattern):
+                pattern_str = mouth_pattern if mouth_pattern is not None else "通常の口"
                 self._send_response(200, {
                     "status": "success",
-                    "message": f"口パターンを {mouth_pattern} に設定しました"
+                    "message": f"口パターンを {pattern_str} に設定しました"
                 })
             else:
                 valid_patterns = [None, "mouth_a", "mouth_i", "mouth_o"]

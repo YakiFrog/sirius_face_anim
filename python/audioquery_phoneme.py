@@ -84,13 +84,15 @@ class TalkingModeController:
             logger.warning(f"❌ おしゃべりモード設定エラー: {e}")
             return False
     
-    def set_mouth_pattern_fast(self, pattern: str) -> bool:
+    def set_mouth_pattern_fast(self, pattern: Optional[str]) -> bool:
         """高速口形状設定（冗長リクエスト排除）"""
         # 同じパターンの場合はスキップ
         if self.last_mouth_pattern == pattern:
+            logger.debug(f"🔧 同じ口パターン ({pattern}) のためスキップ")
             return True
         
         try:
+            logger.debug(f"🔧 口パターン設定リクエスト: {pattern}")
             response = self.session.post(
                 f"{self.server_url}/mouth_pattern",
                 json={'mouth_pattern': pattern},
@@ -99,12 +101,37 @@ class TalkingModeController:
             
             if response.status_code == 200:
                 self.last_mouth_pattern = pattern
+                logger.debug(f"✅ 口パターン設定成功: {pattern}")
                 return True
             else:
+                logger.warning(f"❌ 口パターン設定失敗: HTTP {response.status_code}, {response.text}")
                 return False
                 
-        except Exception:
-            return False  # エラーログも省略して高速化
+        except Exception as e:
+            logger.warning(f"❌ 口パターン設定エラー: {e}")
+            return False
+    
+    def reset_to_neutral(self):
+        """main.pyのリセット機能を使用して全設定をリセット"""
+        try:
+            response = self.session.post(
+                f"{self.server_url}/api/reset",
+                json={},
+                timeout=0.1
+            )
+            
+            if response.status_code == 200:
+                self.is_talking_mode_active = False
+                self.last_mouth_pattern = None
+                logger.info("🔄 main.pyリセット機能により全設定をリセットしました")
+                return True
+            else:
+                logger.warning(f"❌ リセット失敗: HTTP {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"❌ リセット機能エラー: {e}")
+            return False
     
     def cleanup_session(self):
         """セッションのクリーンアップ（メモリリーク防止）"""
@@ -589,27 +616,37 @@ class AudioQueryLipSyncSpeaker:
             if waited_time >= max_wait_time:
                 logger.warning(f"⚠️ 音声再生完了の待機がタイムアウト ({max_wait_time:.1f}秒)")
             
-            # 7. リップシンク終了 - 口を「i」の形にして終了
+            # 7. リップシンク終了 - 口だけを通常の口に戻す（表情はそのまま）
             logger.info("🎭 リップシンク終了処理開始")
-            self.talking_controller.set_mouth_pattern_fast('mouth_i')
             
             # おしゃべりモード無効化
             self.talking_controller.set_talking_mode(False)
+            
+            # 少し待ってから口パターンをクリア（確実に処理されるように）
+            time.sleep(0.1)
+            
+            # 口パターンをクリア（表情は維持）
+            success = self.talking_controller.set_mouth_pattern_fast(None)
+            if not success:
+                logger.warning("⚠️ 口パターンのクリアに失敗しました")
+            else:
+                logger.info("✅ 口パターンを通常の口に戻しました")
+            
             self.is_speaking = False
             
             # 最終的な状態確認
             if audio_result['completed']:
-                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (音声再生完了)")
+                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (口を通常状態に復帰、表情は維持)")
             else:
-                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (タイムアウト)")
+                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (口を通常状態に復帰、表情は維持)")
             
             return True
             
         except Exception as e:
             logger.error(f"❌ AudioQuery音韻解析リップシンク発話エラー: {e}")
             
-            # エラー時も口を「i」の形にして終了（高速化）
-            self.talking_controller.set_mouth_pattern_fast('mouth_i')
+            # エラー時も口だけを通常の口に戻す（表情は維持）
+            self.talking_controller.set_mouth_pattern_fast(None)
             self.talking_controller.set_talking_mode(False)
             self.is_speaking = False
             return False
@@ -755,17 +792,17 @@ class AudioQueryLipSyncSpeaker:
         return asyncio.run(self.speak_with_audioquery_lipsync(text, style_id))
     
     def stop_speaking(self):
-        """現在の発話を停止（高速化版）"""
+        """現在の発話を停止（口だけリセット版）"""
         if self.is_speaking:
             logger.info("🛑 発話を中断します...")
             self.is_speaking = False
             
-            # 高速終了処理
-            self.talking_controller.set_mouth_pattern_fast('mouth_i')
+            # 口だけを通常の口に戻す（表情は維持）
+            self.talking_controller.set_mouth_pattern_fast(None)
             self.talking_controller.set_talking_mode(False)
             
             time.sleep(0.05)  # 短縮
-            logger.info("✅ 発話を中断しました（口形状: i）")
+            logger.info("✅ 発話を中断しました（口を通常状態に復帰、表情は維持）")
 
 def main():
     """メイン関数（簡素化版）"""
@@ -794,6 +831,8 @@ def main():
         logger.info("  3: 'あいうえお、かきくけこ、さしすせそ' - リップシンク発話")
         logger.info("  C: カスタムテキストでリップシンク発話")
         logger.info("  A: カスタムテキストで音韻解析のみ")
+        logger.info("  R: 設定リセット（全設定をニュートラルに戻す）")
+        logger.info("  T: 口パターンテスト（通常口への復帰をテスト）")
         logger.info("  Q: 終了")
         
         sample_texts = {
@@ -828,10 +867,44 @@ def main():
                     else:
                         logger.warning("テキストが入力されませんでした")
                         
+                elif command == "R":
+                    # 全設定をニュートラルにリセット（main.pyのRボタンと同じ機能）
+                    logger.info("🔄 全設定をリセット中...")
+                    if speaker.talking_controller.reset_to_neutral():
+                        logger.info("✅ 全設定リセット完了（表情もニュートラルに戻ります）")
+                    else:
+                        logger.warning("⚠️ 設定リセットに失敗しました")
+                        
+                elif command == "T":
+                    # 口パターンテスト
+                    logger.info("🧪 口パターンテスト開始")
+                    logger.info("  1. おしゃべりモード有効化")
+                    speaker.talking_controller.set_talking_mode(True)
+                    time.sleep(1)
+                    
+                    logger.info("  2. mouth_a パターン設定")
+                    speaker.talking_controller.set_mouth_pattern_fast("mouth_a")
+                    time.sleep(2)
+                    
+                    logger.info("  3. mouth_i パターン設定") 
+                    speaker.talking_controller.set_mouth_pattern_fast("mouth_i")
+                    time.sleep(2)
+                    
+                    logger.info("  4. 通常の口に戻す (None)")
+                    success = speaker.talking_controller.set_mouth_pattern_fast(None)
+                    if success:
+                        logger.info("✅ 口パターンテスト成功")
+                    else:
+                        logger.warning("❌ 口パターンテスト失敗")
+                    
+                    logger.info("  5. おしゃべりモード無効化")
+                    speaker.talking_controller.set_talking_mode(False)
+                    logger.info("🧪 口パターンテスト完了")
+                        
                 elif command == "Q":
                     speaker.stop_speaking()
-                    # 高速終了処理
-                    speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
+                    # 口だけを通常の口に戻す（表情は維持）
+                    speaker.talking_controller.set_mouth_pattern_fast(None)
                     logger.info("👋 システム終了")
                     break
                     
@@ -840,8 +913,8 @@ def main():
                     
         except KeyboardInterrupt:
             speaker.stop_speaking()
-            # Ctrl+C終了時も高速処理
-            speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
+            # Ctrl+C終了時も口だけを通常の口に戻す（表情は維持）
+            speaker.talking_controller.set_mouth_pattern_fast(None)
             logger.info("\n👋 システム終了")
         
     except Exception as e:
