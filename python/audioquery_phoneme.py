@@ -52,40 +52,94 @@ def get_default_onnxruntime_path():
         return "./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.so"
 
 class TalkingModeController:
-    """おしゃべりモード制御クラス（voicevox_lipsync.pyから移植）"""
+    """おしゃべりモード制御クラス（高速化・最適化版）"""
     
     def __init__(self, server_url="http://localhost:8080"):
         self.server_url = server_url
         self.is_talking_mode_active = False
+        self.last_mouth_pattern = None  # 冗長リクエストを防ぐ
+        
+        # 高速化のためのHTTPセッション設定
         self.session = requests.Session()
-        self.session.headers.update({'Content-Type': 'application/json'})
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'  # Keep-Aliveを有効にする
+        })
+        
+        # コネクションプールの設定
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=1,  # プール内の接続数
+            pool_maxsize=1,      # プールの最大サイズ
+            max_retries=0        # リトライしない（高速化のため）
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
     
     def set_talking_mode(self, enabled: bool) -> bool:
-        """おしゃべりモードを設定"""
+        """おしゃべりモードを設定（高速化版）"""
         if self.is_talking_mode_active == enabled:
-            logger.info(f"🎭 おしゃべりモード: 既に{'有効' if enabled else '無効'}です")
-            return True
+            return True  # ログ出力も省略して高速化
         
         try:
-            logger.info(f"🎭 おしゃべりモード切り替え: {'有効' if enabled else '無効'}に変更中...")
             response = self.session.post(
                 f"{self.server_url}/talking_mouth_mode",
                 json={'talking_mouth_mode': enabled},
-                timeout=3
+                timeout=0.1  # タイムアウトを極短に
             )
             
             if response.status_code == 200:
                 self.is_talking_mode_active = enabled
-                status = "有効" if enabled else "無効"
-                logger.info(f"✅ おしゃべりモード: {status}")
                 return True
             else:
-                logger.error(f"❌ HTTP エラー: {response.status_code}, レスポンス: {response.text}")
+                logger.warning(f"❌ HTTP エラー: {response.status_code}")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ おしゃべりモード設定エラー: {e}")
+            logger.warning(f"❌ おしゃべりモード設定エラー: {e}")
             return False
+    
+    def set_mouth_pattern_fast(self, pattern: str) -> bool:
+        """高速口形状設定（冗長リクエスト排除）"""
+        # 同じパターンの場合はスキップ
+        if self.last_mouth_pattern == pattern:
+            return True
+        
+        try:
+            response = self.session.post(
+                f"{self.server_url}/mouth_pattern",
+                json={'mouth_pattern': pattern},
+                timeout=0.05  # 極短タイムアウト
+            )
+            
+            if response.status_code == 200:
+                self.last_mouth_pattern = pattern
+                return True
+            else:
+                return False
+                
+        except Exception:
+            return False  # エラーログも省略して高速化
+    
+    def cleanup_session(self):
+        """セッションのクリーンアップ（メモリリーク防止）"""
+        try:
+            self.session.close()
+            self.session = requests.Session()
+            self.session.headers.update({
+                'Content-Type': 'application/json',
+                'Connection': 'keep-alive'
+            })
+            # アダプターも再設定
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=1,
+                pool_maxsize=1,
+                max_retries=0
+            )
+            self.session.mount('http://', adapter)
+            self.session.mount('https://', adapter)
+            self.last_mouth_pattern = None
+        except Exception as e:
+            logger.warning(f"セッションクリーンアップエラー: {e}")
 
 class AudioPlayer:
     """音声再生クラス（voicevox_lipsync.pyから移植）"""
@@ -519,7 +573,7 @@ class VoiceVoxSynthesizer:
             raise
 
 class AudioQueryLipSyncSpeaker:
-    """AudioQuery音韻解析 + リップシンク発話システム"""
+    """AudioQuery音韻解析 + リップシンク発話システム（高速化版）"""
     
     def __init__(self, server_url="http://localhost:8080", 
                  voicevox_onnxruntime_path="./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib",
@@ -540,7 +594,11 @@ class AudioQueryLipSyncSpeaker:
         self.intonation_scale = 0.0
         self.style_id = self.voicevox.default_style_id
         
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了")
+        # セッション管理用
+        self._session_cleanup_counter = 0
+        self._session_cleanup_interval = 50  # 50回に1回セッションをクリーンアップ
+        
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版）")
     
     def synthesize(self, text: str, style_id: Optional[int] = None) -> bytes:
         """音声合成"""
@@ -619,20 +677,8 @@ class AudioQueryLipSyncSpeaker:
             while not audio_result['completed'] and self.is_speaking:
                 await asyncio.sleep(0.05)
             
-            # 9. リップシンク終了 - 口を「i」の形にして終了
-            logger.info("🎭 発話終了: 口を「i」の形に設定")
-            try:
-                response = self.talking_controller.session.post(
-                    f"{self.talking_controller.server_url}/mouth_pattern",
-                    json={'mouth_pattern': 'mouth_i'},
-                    timeout=1.0
-                )
-                if response.status_code == 200:
-                    logger.info("✅ 終了時口形状設定成功: mouth_i")
-                else:
-                    logger.warning(f"⚠️ 終了時口形状設定失敗: {response.status_code}")
-            except Exception as e:
-                logger.warning(f"⚠️ 終了時口形状設定エラー: {e}")
+            # 9. リップシンク終了 - 口を「i」の形にして終了（高速化）
+            self.talking_controller.set_mouth_pattern_fast('mouth_i')
             
             # おしゃべりモード無効化
             self.talking_controller.set_talking_mode(False)
@@ -644,18 +690,8 @@ class AudioQueryLipSyncSpeaker:
         except Exception as e:
             logger.error(f"❌ AudioQuery音韻解析リップシンク発話エラー: {e}")
             
-            # エラー時も口を「i」の形にして終了
-            try:
-                response = self.talking_controller.session.post(
-                    f"{self.talking_controller.server_url}/mouth_pattern",
-                    json={'mouth_pattern': 'mouth_i'},
-                    timeout=1.0
-                )
-                if response.status_code == 200:
-                    logger.info("✅ エラー時口形状設定成功: mouth_i")
-            except:
-                pass
-            
+            # エラー時も口を「i」の形にして終了（高速化）
+            self.talking_controller.set_mouth_pattern_fast('mouth_i')
             self.talking_controller.set_talking_mode(False)
             self.is_speaking = False
             return False
@@ -683,7 +719,8 @@ class AudioQueryLipSyncSpeaker:
         for mouth_shape, duration in mouth_sequence:
             adjusted_duration = duration * adjustment_ratio
             # 最小時間を保証（短すぎると認識しにくい）
-            adjusted_duration = max(adjusted_duration, 0.05)
+            # 高速化のため最小時間をさらに短縮
+            adjusted_duration = max(adjusted_duration, 0.03)
             adjusted_sequence.append((mouth_shape, adjusted_duration))
         
         return adjusted_sequence
@@ -707,36 +744,39 @@ class AudioQueryLipSyncSpeaker:
             logger.error(f"❌ 遅延おしゃべりモード有効化エラー: {e}")
     
     async def _execute_audioquery_lipsync(self, mouth_sequence: List[Tuple[str, float]], audio_result: dict):
-        """AudioQuery音韻に基づくリップシンクを実行"""
+        """AudioQuery音韻に基づくリップシンクを実行（高速化版）"""
         try:
             elapsed_time = 0.0
+            last_pattern = None  # 冗長リクエスト防止
+            
+            # セッションクリーンアップのカウンター更新
+            self._session_cleanup_counter += 1
+            if self._session_cleanup_counter >= self._session_cleanup_interval:
+                self.talking_controller.cleanup_session()
+                self._session_cleanup_counter = 0
+                logger.debug("🧹 HTTPセッションクリーンアップ実行")
             
             for i, (mouth_shape, duration) in enumerate(mouth_sequence):
                 if not self.is_speaking:
                     break
                 
-                logger.debug(f"🎭 口形状変更 [{i+1}/{len(mouth_sequence)}]: {mouth_shape} ({duration:.2f}秒)")
+                # 音韻解析の口形状をサーバー形式に変換
+                server_pattern = f"mouth_{mouth_shape}" if mouth_shape else "mouth_i"
                 
-                # HTTPサーバーが動作していない場合もスキップ
-                try:
-                    # 音韻解析の口形状をサーバー形式に変換
-                    server_pattern = f"mouth_{mouth_shape}" if mouth_shape else None
-                    
-                    response = self.talking_controller.session.post(
-                        f"{self.talking_controller.server_url}/mouth_pattern",
-                        json={'mouth_pattern': server_pattern},
-                        timeout=0.5
-                    )
-                    
-                    if response.status_code == 200:
-                        logger.debug(f"✅ 口形状設定成功: {server_pattern}")
-                    else:
-                        logger.debug(f"⚠️ 口形状設定失敗: {response.status_code}")
-                except:
-                    logger.debug(f"⚠️ HTTPリクエストスキップ: {mouth_shape}")
+                # 冗長リクエストを防ぐ（同じパターンの場合はスキップ）
+                if server_pattern != last_pattern:
+                    # 高速HTTPリクエスト（非ブロッキング風に処理）
+                    success = self.talking_controller.set_mouth_pattern_fast(server_pattern)
+                    if success:
+                        last_pattern = server_pattern
                 
-                await asyncio.sleep(duration)
-                elapsed_time += duration
+                # 高精度タイミング制御
+                loop_start = time.time()
+                await asyncio.sleep(max(0.001, duration - 0.005))  # 少し早めに終了
+                
+                # 実際の経過時間を記録
+                actual_duration = time.time() - loop_start
+                elapsed_time += actual_duration
             
             logger.info(f"🎭 AudioQueryリップシンク完了 (総時間: {elapsed_time:.2f}秒)")
             
@@ -776,27 +816,16 @@ class AudioQueryLipSyncSpeaker:
         return asyncio.run(self.speak_with_audioquery_lipsync(text, style_id))
     
     def stop_speaking(self):
-        """現在の発話を停止"""
+        """現在の発話を停止（高速化版）"""
         if self.is_speaking:
             logger.info("🛑 発話を中断します...")
             self.is_speaking = False
             
-            # 口を「i」の形にして停止
-            try:
-                response = self.talking_controller.session.post(
-                    f"{self.talking_controller.server_url}/mouth_pattern",
-                    json={'mouth_pattern': 'mouth_i'},
-                    timeout=1.0
-                )
-                if response.status_code == 200:
-                    logger.info("✅ 中断時口形状設定成功: mouth_i")
-                else:
-                    logger.warning(f"⚠️ 中断時口形状設定失敗: {response.status_code}")
-            except Exception as e:
-                logger.warning(f"⚠️ 中断時口形状設定エラー: {e}")
-            
+            # 高速終了処理
+            self.talking_controller.set_mouth_pattern_fast('mouth_i')
             self.talking_controller.set_talking_mode(False)
-            time.sleep(0.2)
+            
+            time.sleep(0.05)  # 短縮
             logger.info("✅ 発話を中断しました（口形状: i）")
 
 class AudioQueryPhonemeConsole:
@@ -1026,17 +1055,8 @@ def main():
                             
                     elif command == "Q":
                         speaker.stop_speaking()
-                        # 終了時に口を「i」の形にする
-                        try:
-                            response = speaker.talking_controller.session.post(
-                                f"{speaker.talking_controller.server_url}/mouth_pattern",
-                                json={'mouth_pattern': 'mouth_i'},
-                                timeout=1.0
-                            )
-                            if response.status_code == 200:
-                                logger.info("✅ 終了時口形状設定: mouth_i")
-                        except:
-                            pass
+                        # 高速終了処理
+                        speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
                         logger.info("👋 システム終了")
                         break
                         
@@ -1045,17 +1065,8 @@ def main():
                         
             except KeyboardInterrupt:
                 speaker.stop_speaking()
-                # Ctrl+C終了時も口を「i」の形にする
-                try:
-                    response = speaker.talking_controller.session.post(
-                        f"{speaker.talking_controller.server_url}/mouth_pattern",
-                        json={'mouth_pattern': 'mouth_i'},
-                        timeout=1.0
-                    )
-                    if response.status_code == 200:
-                        logger.info("✅ Ctrl+C終了時口形状設定: mouth_i")
-                except:
-                    pass
+                # Ctrl+C終了時も高速処理
+                speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
                 logger.info("\n👋 システム終了")
             
     except Exception as e:
