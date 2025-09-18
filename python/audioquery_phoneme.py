@@ -314,78 +314,88 @@ class AudioQueryPhonemeAnalyzer:
             # AudioQueryを作成
             audio_query = self.synthesizer.create_audio_query(text, style_id)
             
+            # デバッグ: AudioQueryの構造を確認
+            logger.info(f"🔧 DEBUG: AudioQuery属性 = {[attr for attr in dir(audio_query) if not attr.startswith('_')]}")
+            if hasattr(audio_query, 'accent_phrases'):
+                logger.info(f"🔧 DEBUG: accent_phrases数 = {len(audio_query.accent_phrases)}")
+            
             phoneme_timeline = []
             total_duration = 0.0
             
             # accent_phrasesから音韻情報を抽出
             if hasattr(audio_query, 'accent_phrases'):
+                
+                # 前音韻長を追加
+                if hasattr(audio_query, 'pre_phoneme_length') and audio_query.pre_phoneme_length > 0:
+                    pre_length = float(audio_query.pre_phoneme_length)
+                    phoneme_timeline.append(('sil', None, pre_length))
+                    total_duration += pre_length
+                    logger.info(f"🔧 DEBUG: 前音韻長追加: {pre_length}秒")
+                
                 for accent_phrase in audio_query.accent_phrases:
                     if hasattr(accent_phrase, 'moras'):
                         for mora in accent_phrase.moras:
                             # 子音処理
                             if hasattr(mora, 'consonant') and mora.consonant:
                                 consonant_phoneme = mora.consonant
-                                consonant_duration = 0.1  # デフォルト値
+                                # 正確な子音時間を取得
+                                consonant_duration = 0.0
                                 
-                                # 時間属性を確認（複数の可能性を試行）
-                                time_attrs = ['consonant_length', 'length', 'duration']
-                                for attr in time_attrs:
-                                    if hasattr(mora, attr):
-                                        try:
-                                            value = getattr(mora, attr)
-                                            if value and value > 0:
-                                                consonant_duration = value
-                                                break
-                                        except:
-                                            continue
+                                if hasattr(mora, 'consonant_length') and mora.consonant_length is not None:
+                                    consonant_duration = float(mora.consonant_length)
                                 
-                                mouth_shape = self.phoneme_to_mouth.get(consonant_phoneme, None)
-                                if mouth_shape and consonant_duration > 0:
-                                    phoneme_timeline.append((consonant_phoneme, mouth_shape, consonant_duration))
-                                    total_duration += consonant_duration
+                                if consonant_duration > 0:
+                                    mouth_shape = self.phoneme_to_mouth.get(consonant_phoneme, None)
+                                    if mouth_shape:
+                                        phoneme_timeline.append((consonant_phoneme, mouth_shape, consonant_duration))
+                                        total_duration += consonant_duration
                             
                             # 母音処理
                             if hasattr(mora, 'vowel') and mora.vowel:
                                 vowel_phoneme = mora.vowel
-                                vowel_duration = 0.2  # デフォルト値
+                                # 正確な母音時間を取得
+                                vowel_duration = 0.0
                                 
-                                # 時間属性を確認（複数の可能性を試行）
-                                time_attrs = ['vowel_length', 'length', 'duration']
-                                for attr in time_attrs:
-                                    if hasattr(mora, attr):
-                                        try:
-                                            value = getattr(mora, attr)
-                                            if value and value > 0:
-                                                vowel_duration = value
-                                                break
-                                        except:
-                                            continue
+                                if hasattr(mora, 'vowel_length') and mora.vowel_length is not None:
+                                    vowel_duration = float(mora.vowel_length)
+                                else:
+                                    # デバッグ: moraの全属性をログ出力
+                                    logger.warning(f"🔧 DEBUG: mora属性 = {[attr for attr in dir(mora) if not attr.startswith('_')]}")
+                                    logger.warning(f"🔧 DEBUG: vowel_length = {getattr(mora, 'vowel_length', 'NOT_FOUND')}")
                                 
-                                mouth_shape = self.phoneme_to_mouth.get(vowel_phoneme, 'a')
                                 if vowel_duration > 0:
+                                    mouth_shape = self.phoneme_to_mouth.get(vowel_phoneme, 'a')
                                     phoneme_timeline.append((vowel_phoneme, mouth_shape, vowel_duration))
                                     total_duration += vowel_duration
                     
-                    # ポーズ処理
+                                        # ポーズ処理
                     if hasattr(accent_phrase, 'pause_mora') and accent_phrase.pause_mora:
-                        pause_duration = 0.3  # デフォルト値
+                        pause_duration = 0.0
                         
-                        # ポーズの時間属性を確認
-                        pause_mora = accent_phrase.pause_mora
-                        time_attrs = ['vowel_length', 'length', 'duration']
-                        for attr in time_attrs:
-                            if hasattr(pause_mora, attr):
-                                try:
-                                    value = getattr(pause_mora, attr)
-                                    if value and value > 0:
-                                        pause_duration = value
-                                        break
-                                except:
-                                    continue
+                        # pause_moraは辞書形式、vowel_lengthキーから時間を取得
+                        if isinstance(accent_phrase.pause_mora, dict):
+                            pause_duration = accent_phrase.pause_mora.get('vowel_length', 0.0)
+                            logger.info(f"🔧 DEBUG: ポーズ辞書 = {accent_phrase.pause_mora}")
+                            logger.info(f"🔧 DEBUG: ポーズ時間(vowel_length) = {pause_duration}")
+                        else:
+                            # オブジェクトの場合
+                            if hasattr(accent_phrase.pause_mora, 'vowel_length'):
+                                pause_duration = float(accent_phrase.pause_mora.vowel_length)
+                                logger.info(f"🔧 DEBUG: ポーズ時間(属性) = {pause_duration}")
                         
                         if pause_duration > 0:
-                            phoneme_timeline.append(('pau', None, pause_duration))
+                            phoneme_timeline.append(('pau', 'i', pause_duration))
                             total_duration += pause_duration
+                            logger.info(f"🔧 DEBUG: ポーズ追加: {pause_duration}秒")
+                        else:
+                            logger.warning(f"🔧 DEBUG: ポーズ時間が0秒のためスキップ")
+                
+                # 後音韻長を追加
+                if hasattr(audio_query, 'post_phoneme_length') and audio_query.post_phoneme_length > 0:
+                    post_length = float(audio_query.post_phoneme_length)
+                    phoneme_timeline.append(('sil', None, post_length))
+                    total_duration += post_length
+                    logger.info(f"🔧 DEBUG: 後音韻長追加: {post_length}秒")
             
             logger.info(f"✅ AudioQuery音韻解析完了: {len(phoneme_timeline)}音韻, 総時間: {total_duration:.2f}秒")
             
@@ -590,20 +600,20 @@ class AudioQueryLipSyncSpeaker:
             # 音声再生スレッドを開始
             audio_thread = self._start_audio_playback(wav_data, audio_result)
             
-            # 少し待ってからリップシンク開始
-            await asyncio.sleep(0.1)
-            
             if not self.is_speaking:
                 logger.info("🛑 発話開始時に中断されました")
                 return False
             
-            # 6. おしゃべりモード有効化
-            if not self.talking_controller.set_talking_mode(True):
-                logger.warning("⚠️ おしゃべりモード有効化に失敗（サーバー接続エラー）")
+            # 6. おしゃべりモードを有効化するタスクを開始
+            talking_mode_task = asyncio.create_task(self._delayed_talking_mode_activation())
             
             # 7. 調整された音韻に基づいたリップシンク実行
             logger.info("🎭 AudioQuery同期リップシンク開始")
             await self._execute_audioquery_lipsync(adjusted_sequence, audio_result)
+            
+            # おしゃべりモード有効化タスクの完了を待機（まだ完了していない場合）
+            if not talking_mode_task.done():
+                await talking_mode_task
             
             # 8. 音声再生の完了を待機
             while not audio_result['completed'] and self.is_speaking:
@@ -677,6 +687,24 @@ class AudioQueryLipSyncSpeaker:
             adjusted_sequence.append((mouth_shape, adjusted_duration))
         
         return adjusted_sequence
+    
+    async def _delayed_talking_mode_activation(self):
+        """0.5秒後におしゃべりモードを有効化"""
+        try:
+            logger.info("⏰ 0.5秒待機中（おしゃべりモード有効化まで）...")
+            await asyncio.sleep(0.5)
+            
+            if self.is_speaking:
+                logger.info("🎭 0.5秒経過 - おしゃべりモード有効化")
+                if not self.talking_controller.set_talking_mode(True):
+                    logger.warning("⚠️ おしゃべりモード有効化に失敗（サーバー接続エラー）")
+                else:
+                    logger.info("✅ おしゃべりモード有効化成功")
+            else:
+                logger.info("🛑 発話が停止済みのため、おしゃべりモード有効化をスキップ")
+                
+        except Exception as e:
+            logger.error(f"❌ 遅延おしゃべりモード有効化エラー: {e}")
     
     async def _execute_audioquery_lipsync(self, mouth_sequence: List[Tuple[str, float]], audio_result: dict):
         """AudioQuery音韻に基づくリップシンクを実行"""
