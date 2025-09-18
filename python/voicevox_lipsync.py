@@ -14,6 +14,7 @@ import tempfile
 import os
 import io
 import wave
+import platform
 from typing import Optional, Dict, Any
 from pathlib import Path
 import argparse
@@ -37,6 +38,18 @@ except ImportError:
 # ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def get_default_onnxruntime_path():
+    """プラットフォームに応じてデフォルトのONNX Runtimeパスを取得"""
+    system = platform.system().lower()
+    if system == "darwin":  # macOS
+        return "./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib"
+    elif system == "linux":
+        return "./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.so.1.17.3"
+    elif system == "windows":
+        return "./voicevox_core/onnxruntime/lib/voicevox_onnxruntime.dll"
+    else:
+        return "./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.so"
 
 class TalkingModeController:
     """おしゃべりモード制御クラス"""
@@ -91,6 +104,21 @@ class VoiceVoxSynthesizer:
         """シンセサイザーを初期化"""
         try:
             logger.info("🎤 VOICEVOX初期化中...")
+            logger.info(f"🖥️  実行プラットフォーム: {platform.system()} {platform.machine()}")
+            logger.info(f"📁 ONNX Runtimeパス: {self.voicevox_onnxruntime_path}")
+            
+            # ファイルの存在確認
+            if not os.path.exists(self.voicevox_onnxruntime_path):
+                logger.error(f"❌ ONNX Runtimeファイルが見つかりません: {self.voicevox_onnxruntime_path}")
+                raise FileNotFoundError(f"ONNX Runtime not found: {self.voicevox_onnxruntime_path}")
+            
+            if not os.path.exists(self.open_jtalk_dict_dir):
+                logger.error(f"❌ Open JTalk辞書ディレクトリが見つかりません: {self.open_jtalk_dict_dir}")
+                raise FileNotFoundError(f"Open JTalk dict not found: {self.open_jtalk_dict_dir}")
+            
+            if not os.path.exists(self.model_path):
+                logger.error(f"❌ 音声モデルファイルが見つかりません: {self.model_path}")
+                raise FileNotFoundError(f"Voice model not found: {self.model_path}")
             
             # Synthesizerの初期化
             self.synthesizer = Synthesizer(
@@ -277,7 +305,7 @@ class AudioPlayer:
             return 0.0
     
     def _play_with_system(self, wav_data: bytes) -> float:
-        """システムコマンドで音声再生（macOS）"""
+        """システムコマンドで音声再生（プラットフォーム対応）"""
         try:
             start_time = time.time()
             
@@ -286,12 +314,53 @@ class AudioPlayer:
                 temp_file.write(wav_data)
                 temp_path = temp_file.name
             
-            # afplayで再生
             import subprocess
-            subprocess.run(['afplay', temp_path], check=True)
+            system = platform.system().lower()
             
-            # 一時ファイル削除
-            os.unlink(temp_path)
+            try:
+                if system == "darwin":  # macOS
+                    subprocess.run(['afplay', temp_path], check=True)
+                elif system == "linux":
+                    # Linuxでの音声再生コマンドを試行（優先順位順）
+                    commands_to_try = [
+                        ['aplay', temp_path],           # ALSA
+                        ['paplay', temp_path],          # PulseAudio
+                        ['play', temp_path],            # SoX
+                        ['ffplay', '-nodisp', '-autoexit', temp_path],  # FFmpeg
+                        ['mplayer', '-really-quiet', temp_path],        # MPlayer
+                        ['mpv', '--no-video', '--really-quiet', temp_path]  # mpv
+                    ]
+                    
+                    played_successfully = False
+                    for cmd in commands_to_try:
+                        try:
+                            logger.info(f"🔊 音声再生試行: {cmd[0]}")
+                            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            played_successfully = True
+                            logger.info(f"✅ {cmd[0]}で再生成功")
+                            break
+                        except (subprocess.CalledProcessError, FileNotFoundError):
+                            continue
+                    
+                    if not played_successfully:
+                        logger.error("❌ 利用可能な音声再生コマンドが見つかりません")
+                        logger.error("以下のいずれかをインストールしてください: aplay, paplay, play, ffplay, mplayer, mpv")
+                        return 0.0
+                        
+                elif system == "windows":
+                    # Windowsの場合（参考）
+                    import winsound
+                    winsound.PlaySound(temp_path, winsound.SND_FILENAME)
+                else:
+                    logger.warning(f"⚠️ 不明なプラットフォーム: {system}")
+                    return 0.0
+                    
+            finally:
+                # 一時ファイル削除
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
             
             actual_duration = time.time() - start_time
             logger.info(f"🔊 システム再生完了 (時間: {actual_duration:.2f}秒)")
@@ -586,7 +655,7 @@ def main():
     parser = argparse.ArgumentParser(description='VOICEVOX + リップシンク同期システム')
     parser.add_argument('--server', default='http://localhost:8080',
                        help='HTTPサーバーのURL (デフォルト: http://localhost:8080)')
-    parser.add_argument('--onnxruntime', default='./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib',
+    parser.add_argument('--onnxruntime', default=get_default_onnxruntime_path(),
                        help='ONNX Runtimeライブラリのパス')
     parser.add_argument('--dict-dir', default='./voicevox_core/dict/open_jtalk_dic_utf_8-1.11',
                        help='Open JTalk辞書ディレクトリ')
@@ -606,6 +675,35 @@ def main():
     args = parser.parse_args()
     
     try:
+        # ファイル存在チェック
+        logger.info(f"🔍 ファイル存在チェック:")
+        logger.info(f"  プラットフォーム: {platform.system()} {platform.machine()}")
+        logger.info(f"  ONNX Runtime: {args.onnxruntime} - {'存在' if os.path.exists(args.onnxruntime) else '存在しない'}")
+        logger.info(f"  辞書: {args.dict_dir} - {'存在' if os.path.exists(args.dict_dir) else '存在しない'}")
+        logger.info(f"  モデル: {args.model} - {'存在' if os.path.exists(args.model) else '存在しない'}")
+        
+        # 音声再生環境チェック（Linux用）
+        if platform.system().lower() == "linux":
+            logger.info("🐧 Linux音声再生環境チェック:")
+            import subprocess
+            audio_commands = ['aplay', 'paplay', 'play', 'ffplay', 'mplayer', 'mpv']
+            available_commands = []
+            
+            for cmd in audio_commands:
+                try:
+                    subprocess.run([cmd, '--version'], check=True, 
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    available_commands.append(cmd)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    pass
+            
+            if available_commands:
+                logger.info(f"  利用可能な音声コマンド: {', '.join(available_commands)}")
+            else:
+                logger.warning("⚠️ 音声再生コマンドが見つかりません")
+                logger.warning("以下のコマンドをインストールすることを推奨:")
+                logger.warning("  sudo apt-get install alsa-utils pulseaudio-utils sox ffmpeg")
+        
         # スピーカー初期化
         speaker = VoiceVoxLipSyncSpeaker(
             args.server,
@@ -628,9 +726,19 @@ def main():
     except Exception as e:
         logger.error(f"❌ システム初期化エラー: {e}")
         logger.error("必要なファイルが存在するか確認してください:")
+        logger.error(f"  - プラットフォーム: {platform.system()} {platform.machine()}")
         logger.error(f"  - ONNX Runtime: {args.onnxruntime}")
         logger.error(f"  - 辞書: {args.dict_dir}")
         logger.error(f"  - モデル: {args.model}")
+        
+        # Linuxの場合の追加ヒント
+        if platform.system().lower() == "linux":
+            logger.error("🐧 Linuxでの追加確認事項:")
+            logger.error("  - .soファイルが正しく配置されているか")
+            logger.error("  - 必要な依存ライブラリがインストールされているか")
+            logger.error("  - ファイルの実行権限があるか")
+            logger.error("  - 音声再生コマンドがインストールされているか:")
+            logger.error("    sudo apt-get install alsa-utils pulseaudio-utils sox ffmpeg")
 
 if __name__ == "__main__":
     main()
