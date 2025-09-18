@@ -16,7 +16,8 @@ import tempfile
 import io
 import wave
 import subprocess
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
+from pathlib import Path
 
 # VOICEVOX Core関連のインポート
 from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
@@ -24,6 +25,227 @@ from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceMod
 # ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class DialogueManager:
+    """JSONファイルでセリフを管理するクラス"""
+    
+    def __init__(self, dialogue_file_path: str = "./dialogue_data.json"):
+        self.dialogue_file_path = Path(dialogue_file_path)
+        self.dialogues: Dict[str, Dict[str, Any]] = {}
+        self.settings: Dict[str, Any] = {}
+        self.vvm_models: Dict[str, Dict[str, Any]] = {}
+        self.last_modified_time: float = 0.0  # ファイル最終変更時刻
+        self.auto_reload_enabled: bool = True  # 自動再読み込み有効フラグ
+        self.load_dialogues()
+    
+    def load_dialogues(self) -> bool:
+        """JSONファイルからセリフデータを読み込み"""
+        try:
+            if not self.dialogue_file_path.exists():
+                logger.warning(f"⚠️ セリフファイルが見つかりません: {self.dialogue_file_path}")
+                self._create_default_dialogue_file()
+                return False
+            
+            with open(self.dialogue_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            self.dialogues = data.get('dialogues', {})
+            self.settings = data.get('settings', {})
+            self.vvm_models = data.get('vvm_models', {})
+            
+            # ファイル最終変更時刻を記録
+            self._update_modification_time()
+            
+            # 有効なセリフのみをカウント
+            enabled_count = sum(1 for dialogue in self.dialogues.values() if dialogue.get('enabled', True))
+            total_count = len(self.dialogues)
+            
+            logger.info(f"📋 セリフファイル読み込み完了: {enabled_count}/{total_count}件有効")
+            
+            return True
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSONファイル解析エラー: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ セリフファイル読み込みエラー: {e}")
+            return False
+    
+    def _create_default_dialogue_file(self):
+        """デフォルトのセリフファイルを作成"""
+        default_data = {
+            "dialogues": {
+                "1": {
+                    "text": "僕の名前はシリウスです",
+                    "enabled": True,
+                    "style_id": 54,
+                    "speed": 1.0,
+                    "pitch": 0.0,
+                    "intonation": 0.9,
+                    "description": "自己紹介"
+                }
+            },
+            "settings": {
+                "default_style_id": 54,
+                "default_speed": 1.0,
+                "default_pitch": 0.0,
+                "default_intonation": 0.9,
+                "dialogue_file_encoding": "utf-8"
+            }
+        }
+        
+        try:
+            with open(self.dialogue_file_path, 'w', encoding='utf-8') as f:
+                json.dump(default_data, f, ensure_ascii=False, indent=2)
+            logger.info(f"📝 デフォルトセリフファイルを作成: {self.dialogue_file_path}")
+        except Exception as e:
+            logger.error(f"❌ デフォルトセリフファイル作成エラー: {e}")
+    
+    def get_dialogue(self, key: str) -> Optional[Dict[str, Any]]:
+        """指定されたキーのセリフ情報を取得（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        dialogue = self.dialogues.get(key)
+        if dialogue is None:
+            logger.warning(f"⚠️ セリフが見つかりません: '{key}'")
+            return None
+        
+        if not dialogue.get('enabled', True):
+            logger.warning(f"⚠️ セリフが無効化されています: '{key}'")
+            return None
+        
+        return dialogue
+    
+    def get_enabled_dialogues(self) -> Dict[str, Dict[str, Any]]:
+        """有効なセリフのみを取得（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        return {
+            key: dialogue for key, dialogue in self.dialogues.items()
+            if dialogue.get('enabled', True)
+        }
+    
+    def list_dialogues(self) -> None:
+        """利用可能なセリフ一覧を表示（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        enabled_dialogues = self.get_enabled_dialogues()
+        
+        if not enabled_dialogues:
+            logger.warning("⚠️ 有効なセリフがありません")
+            return
+        
+        logger.info("📋 利用可能なセリフ一覧:")
+        for key, dialogue in enabled_dialogues.items():
+            text = dialogue.get('text', '')
+            description = dialogue.get('description', '')
+            style_id = dialogue.get('style_id', self.settings.get('default_style_id', 54))
+            vvm_model = dialogue.get('vvm_model', self.settings.get('default_vvm_model', '13.vvm'))
+            
+            if description:
+                logger.info(f"  {key}: '{text}' ({description}) [スタイル:{style_id}, VVM:{vvm_model}]")
+            else:
+                logger.info(f"  {key}: '{text}' [スタイル:{style_id}, VVM:{vvm_model}]")
+    
+    def reload_dialogues(self) -> bool:
+        """セリフファイルを再読み込み"""
+        logger.info("🔄 セリフファイル再読み込み中...")
+        return self.load_dialogues()
+    
+    def get_default_settings(self) -> Dict[str, Any]:
+        """デフォルト設定を取得"""
+        return self.settings
+    
+    def get_vvm_model_path(self, vvm_name: str) -> Optional[str]:
+        """VVMモデル名からパスを取得（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        model_info = self.vvm_models.get(vvm_name)
+        if model_info:
+            return model_info.get('path')
+        
+        # フォールバック: models_dirから直接パス構築
+        models_dir = self.settings.get('vvm_models_dir', './voicevox_core/models/vvms')
+        fallback_path = os.path.join(models_dir, vvm_name)
+        if os.path.exists(fallback_path):
+            return fallback_path
+        
+        return None
+    
+    def get_vvm_model_info(self, vvm_name: str) -> Optional[Dict[str, Any]]:
+        """VVMモデルの詳細情報を取得（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        return self.vvm_models.get(vvm_name)
+    
+    def list_vvm_models(self) -> None:
+        """利用可能なVVMモデル一覧を表示（自動再読み込み対応）"""
+        # ファイル変更チェック＆自動再読み込み
+        self.auto_reload_if_modified()
+        
+        if not self.vvm_models:
+            logger.warning("⚠️ 登録されたVVMモデルがありません")
+            return
+        
+        logger.info("🎤 利用可能なVVMモデル一覧:")
+        for vvm_name, model_info in self.vvm_models.items():
+            name = model_info.get('name', 'Unknown')
+            path = model_info.get('path', '')
+            styles = model_info.get('available_styles', [])
+            exists = os.path.exists(path) if path else False
+            status = "✅" if exists else "❌"
+            
+            logger.info(f"  {status} {vvm_name}: {name} (スタイル: {styles})")
+    
+    def get_default_vvm_model(self) -> str:
+        """デフォルトVVMモデル名を取得"""
+        return self.settings.get('default_vvm_model', '13.vvm')
+    
+    def _update_modification_time(self):
+        """ファイル最終変更時刻を更新"""
+        try:
+            if self.dialogue_file_path.exists():
+                self.last_modified_time = self.dialogue_file_path.stat().st_mtime
+        except Exception as e:
+            logger.warning(f"⚠️ ファイル変更時刻取得エラー: {e}")
+    
+    def check_file_modified(self) -> bool:
+        """ファイルが変更されたかチェック"""
+        if not self.auto_reload_enabled:
+            return False
+        
+        try:
+            if not self.dialogue_file_path.exists():
+                return False
+            
+            current_time = self.dialogue_file_path.stat().st_mtime
+            return current_time > self.last_modified_time
+        except Exception as e:
+            logger.warning(f"⚠️ ファイル変更チェックエラー: {e}")
+            return False
+    
+    def auto_reload_if_modified(self) -> bool:
+        """ファイルが変更されている場合に自動再読み込み"""
+        if self.check_file_modified():
+            logger.info("🔄 JSONファイルの変更を検知、自動再読み込み中...")
+            success = self.load_dialogues()
+            if success:
+                logger.info("✅ JSONファイル自動再読み込み完了")
+            else:
+                logger.warning("⚠️ JSONファイル自動再読み込みに失敗")
+            return success
+        return True
+    
+    def set_auto_reload(self, enabled: bool):
+        """自動再読み込み機能の有効/無効を設定"""
+        self.auto_reload_enabled = enabled
+        status = "有効" if enabled else "無効"
+        logger.info(f"🔄 JSONファイル自動再読み込み機能: {status}")
 
 def get_default_onnxruntime_path():
     """プラットフォームに応じてデフォルトのONNX Runtimeパスを取得"""
@@ -451,15 +673,16 @@ class AudioQueryPhonemeAnalyzer:
             logger.info(f"  {shape}: {count}回 ({duration:.3f}秒, {percentage:.1f}%)")
 
 class VoiceVoxSynthesizer:
-    """VOICEVOX音声合成クラス（AudioQuery対応）"""
+    """VOICEVOX音声合成クラス（AudioQuery対応・VVM動的切り替え対応）"""
     
     def __init__(self, voicevox_onnxruntime_path: str, open_jtalk_dict_dir: str, model_path: str):
         self.voicevox_onnxruntime_path = voicevox_onnxruntime_path
         self.open_jtalk_dict_dir = open_jtalk_dict_dir
-        self.model_path = model_path
+        self.current_model_path = model_path
         self.synthesizer = None
         self.available_styles = []
         self.default_style_id = None
+        self.loaded_models = {}  # モデルキャッシュ
         
         self._initialize_synthesizer()
     
@@ -474,34 +697,86 @@ class VoiceVoxSynthesizer:
             if not os.path.exists(self.open_jtalk_dict_dir):
                 raise FileNotFoundError(f"Open JTalk dict not found: {self.open_jtalk_dict_dir}")
             
-            if not os.path.exists(self.model_path):
-                raise FileNotFoundError(f"Voice model not found: {self.model_path}")
+            if not os.path.exists(self.current_model_path):
+                raise FileNotFoundError(f"Voice model not found: {self.current_model_path}")
             
             self.synthesizer = Synthesizer(
                 Onnxruntime.load_once(filename=self.voicevox_onnxruntime_path),
                 OpenJtalk(self.open_jtalk_dict_dir)
             )
             
-            with VoiceModelFile.open(self.model_path) as model:
-                self.synthesizer.load_voice_model(model)
-            
-            metas = self.synthesizer.metas()
-            for meta in metas:
-                for style in meta.styles:
-                    self.available_styles.append({
-                        'character': meta.name,
-                        'style_name': style.name,
-                        'style_id': style.id
-                    })
-            
-            if self.available_styles:
-                self.default_style_id = self.available_styles[0]['style_id']
+            # 初期モデルをロード
+            self._load_model(self.current_model_path)
             
             logger.info("✅ VOICEVOX初期化完了")
             
         except Exception as e:
             logger.error(f"❌ VOICEVOX初期化エラー: {e}")
             raise
+    
+    def _load_model(self, model_path: str):
+        """指定されたモデルをロード"""
+        try:
+            # 既にロード済みの場合はスキップ
+            if model_path in self.loaded_models:
+                logger.debug(f"🔧 モデル既にロード済み: {model_path}")
+                self.current_model_path = model_path
+                self._update_available_styles()
+                return True
+            
+            logger.info(f"🎤 音声モデルロード中: {model_path}")
+            
+            with VoiceModelFile.open(model_path) as model:
+                self.synthesizer.load_voice_model(model)
+            
+            # キャッシュに追加
+            self.loaded_models[model_path] = True
+            self.current_model_path = model_path
+            
+            self._update_available_styles()
+            
+            model_name = os.path.basename(model_path)
+            logger.info(f"✅ 音声モデルロード完了: {model_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ 音声モデルロードエラー ({model_path}): {e}")
+            return False
+    
+    def _update_available_styles(self):
+        """利用可能なスタイルを更新"""
+        self.available_styles = []
+        metas = self.synthesizer.metas()
+        for meta in metas:
+            for style in meta.styles:
+                self.available_styles.append({
+                    'character': meta.name,
+                    'style_name': style.name,
+                    'style_id': style.id
+                })
+        
+        if self.available_styles:
+            self.default_style_id = self.available_styles[0]['style_id']
+    
+    def switch_model(self, model_path: str) -> bool:
+        """音声モデルを切り替え"""
+        if not os.path.exists(model_path):
+            logger.error(f"❌ 音声モデルファイルが存在しません: {model_path}")
+            return False
+        
+        if model_path == self.current_model_path:
+            logger.debug(f"🔧 同じモデルのため切り替えスキップ: {model_path}")
+            return True
+        
+        return self._load_model(model_path)
+    
+    def get_current_model(self) -> str:
+        """現在のモデルパスを取得"""
+        return self.current_model_path
+    
+    def get_loaded_models(self) -> List[str]:
+        """ロード済みモデル一覧を取得"""
+        return list(self.loaded_models.keys())
 
 class AudioQueryLipSyncSpeaker:
     """AudioQuery音韻解析 + リップシンク発話システム（高速化版）"""
@@ -509,27 +784,49 @@ class AudioQueryLipSyncSpeaker:
     def __init__(self, server_url="http://localhost:8080", 
                  voicevox_onnxruntime_path="./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib",
                  open_jtalk_dict_dir="./voicevox_core/dict/open_jtalk_dic_utf_8-1.11",
-                 model_path="./voicevox_core/models/vvms/13.vvm"):
+                 model_path="./voicevox_core/models/vvms/13.vvm",
+                 dialogue_file_path="./dialogue_data.json"):
         
         self.talking_controller = TalkingModeController(server_url)
         self.audio_player = AudioPlayer()
         self.voicevox = VoiceVoxSynthesizer(voicevox_onnxruntime_path, open_jtalk_dict_dir, model_path)
         self.analyzer = AudioQueryPhonemeAnalyzer(self.voicevox.synthesizer)
         
+        # JSONセリフ管理機能
+        self.dialogue_manager = DialogueManager(dialogue_file_path)
+        
         self.is_speaking = False
         self._speech_lock = threading.Lock()
         
-        # 音声パラメータ
-        self.speed_scale = 1.0
-        self.pitch_scale = 0.00
-        self.intonation_scale = 0.9
-        self.style_id = self.voicevox.default_style_id
+        # 音声パラメータ（JSONから読み込み）
+        default_settings = self.dialogue_manager.get_default_settings()
+        self.speed_scale = default_settings.get('default_speed', 1.0)
+        self.pitch_scale = default_settings.get('default_pitch', 0.0)
+        self.intonation_scale = default_settings.get('default_intonation', 0.9)
+        self.style_id = default_settings.get('default_style_id', self.voicevox.default_style_id)
+        self.current_vvm_model = default_settings.get('default_vvm_model', '13.vvm')
         
         # セッション管理用
         self._session_cleanup_counter = 0
         self._session_cleanup_interval = 50  # 50回に1回セッションをクリーンアップ
         
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版）")
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版・JSON対応・VVM切り替え対応）")
+    
+    def switch_vvm_model(self, vvm_name: str) -> bool:
+        """VVMモデルを切り替え"""
+        model_path = self.dialogue_manager.get_vvm_model_path(vvm_name)
+        if not model_path:
+            logger.error(f"❌ VVMモデルが見つかりません: {vvm_name}")
+            return False
+        
+        success = self.voicevox.switch_model(model_path)
+        if success:
+            self.current_vvm_model = vvm_name
+            model_info = self.dialogue_manager.get_vvm_model_info(vvm_name)
+            model_name = model_info.get('name', vvm_name) if model_info else vvm_name
+            logger.info(f"✅ VVMモデル切り替え完了: {model_name} ({vvm_name})")
+        
+        return success
     
     def synthesize(self, text: str, style_id: Optional[int] = None) -> bytes:
         """音声合成"""
@@ -791,6 +1088,108 @@ class AudioQueryLipSyncSpeaker:
         """同期的にAudioQuery音韻解析リップシンク発話"""
         return asyncio.run(self.speak_with_audioquery_lipsync(text, style_id))
     
+    def speak_dialogue(self, dialogue_key: str) -> bool:
+        """JSONで管理されたセリフを発話（VVM切り替え対応）"""
+        dialogue = self.dialogue_manager.get_dialogue(dialogue_key)
+        if dialogue is None:
+            return False
+        
+        text = dialogue.get('text', '')
+        if not text:
+            logger.warning(f"⚠️ セリフテキストが空です: '{dialogue_key}'")
+            return False
+        
+        # セリフ固有の設定を適用
+        original_speed = self.speed_scale
+        original_pitch = self.pitch_scale
+        original_intonation = self.intonation_scale
+        original_vvm_model = self.current_vvm_model
+        
+        try:
+            # VVMモデル切り替え（必要な場合）
+            required_vvm = dialogue.get('vvm_model', self.dialogue_manager.get_default_vvm_model())
+            if required_vvm != self.current_vvm_model:
+                logger.info(f"🎤 VVMモデル切り替え: {self.current_vvm_model} → {required_vvm}")
+                if not self.switch_vvm_model(required_vvm):
+                    logger.warning(f"⚠️ VVMモデル切り替えに失敗、デフォルトモデルで継続")
+            
+            # セリフ固有の設定を一時的に適用
+            self.speed_scale = dialogue.get('speed', original_speed)
+            self.pitch_scale = dialogue.get('pitch', original_pitch)
+            self.intonation_scale = dialogue.get('intonation', original_intonation)
+            style_id = dialogue.get('style_id', self.style_id)
+            
+            description = dialogue.get('description', '')
+            model_info = self.dialogue_manager.get_vvm_model_info(self.current_vvm_model)
+            model_name = model_info.get('name', self.current_vvm_model) if model_info else self.current_vvm_model
+            
+            if description:
+                logger.info(f"🎭 JSONセリフ発話: '{text}' ({description}) [キー: {dialogue_key}, モデル: {model_name}]")
+            else:
+                logger.info(f"🎭 JSONセリフ発話: '{text}' [キー: {dialogue_key}, モデル: {model_name}]")
+            
+            # 発話実行
+            result = self.speak_sync(text, style_id)
+            
+            return result
+            
+        finally:
+            # 設定を元に戻す
+            self.speed_scale = original_speed
+            self.pitch_scale = original_pitch
+            self.intonation_scale = original_intonation
+    
+    async def speak_dialogue_async(self, dialogue_key: str) -> bool:
+        """JSONで管理されたセリフを非同期発話（VVM切り替え対応）"""
+        dialogue = self.dialogue_manager.get_dialogue(dialogue_key)
+        if dialogue is None:
+            return False
+        
+        text = dialogue.get('text', '')
+        if not text:
+            logger.warning(f"⚠️ セリフテキストが空です: '{dialogue_key}'")
+            return False
+        
+        # セリフ固有の設定を適用
+        original_speed = self.speed_scale
+        original_pitch = self.pitch_scale
+        original_intonation = self.intonation_scale
+        original_vvm_model = self.current_vvm_model
+        
+        try:
+            # VVMモデル切り替え（必要な場合）
+            required_vvm = dialogue.get('vvm_model', self.dialogue_manager.get_default_vvm_model())
+            if required_vvm != self.current_vvm_model:
+                logger.info(f"🎤 VVMモデル切り替え: {self.current_vvm_model} → {required_vvm}")
+                if not self.switch_vvm_model(required_vvm):
+                    logger.warning(f"⚠️ VVMモデル切り替えに失敗、デフォルトモデルで継続")
+            
+            # セリフ固有の設定を一時的に適用
+            self.speed_scale = dialogue.get('speed', original_speed)
+            self.pitch_scale = dialogue.get('pitch', original_pitch)
+            self.intonation_scale = dialogue.get('intonation', original_intonation)
+            style_id = dialogue.get('style_id', self.style_id)
+            
+            description = dialogue.get('description', '')
+            model_info = self.dialogue_manager.get_vvm_model_info(self.current_vvm_model)
+            model_name = model_info.get('name', self.current_vvm_model) if model_info else self.current_vvm_model
+            
+            if description:
+                logger.info(f"🎭 JSONセリフ発話(非同期): '{text}' ({description}) [キー: {dialogue_key}, モデル: {model_name}]")
+            else:
+                logger.info(f"🎭 JSONセリフ発話(非同期): '{text}' [キー: {dialogue_key}, モデル: {model_name}]")
+            
+            # 非同期発話実行
+            result = await self.speak_with_audioquery_lipsync(text, style_id)
+            
+            return result
+            
+        finally:
+            # 設定を元に戻す
+            self.speed_scale = original_speed
+            self.pitch_scale = original_pitch
+            self.intonation_scale = original_intonation
+    
     def stop_speaking(self):
         """現在の発話を停止（口だけリセット版）"""
         if self.is_speaking:
@@ -805,53 +1204,79 @@ class AudioQueryLipSyncSpeaker:
             logger.info("✅ 発話を中断しました（口を通常状態に復帰、表情は維持）")
 
 def main():
-    """メイン関数（簡素化版）"""
+    """メイン関数（JSON対応版）"""
     try:
         # ファイル存在チェック
         onnxruntime_path = get_default_onnxruntime_path()
         dict_dir = './voicevox_core/dict/open_jtalk_dic_utf_8-1.11'
         model_path = './voicevox_core/models/vvms/13.vvm'
         server_url = 'http://localhost:8080'
-        style_id = 54
+        dialogue_file = './dialogue_data.json'
         
         logger.info(f"🔍 ファイル存在チェック:")
         logger.info(f"  ONNX Runtime: {onnxruntime_path} - {'存在' if os.path.exists(onnxruntime_path) else '存在しない'}")
         logger.info(f"  辞書: {dict_dir} - {'存在' if os.path.exists(dict_dir) else '存在しない'}")
         logger.info(f"  モデル: {model_path} - {'存在' if os.path.exists(model_path) else '存在しない'}")
+        logger.info(f"  セリフファイル: {dialogue_file} - {'存在' if os.path.exists(dialogue_file) else '存在しない'}")
         
-        # リップシンク機能付きスピーカーを初期化
-        speaker = AudioQueryLipSyncSpeaker(server_url, onnxruntime_path, dict_dir, model_path)
-        speaker.style_id = style_id
+        # リップシンク機能付きスピーカーを初期化（JSON対応）
+        speaker = AudioQueryLipSyncSpeaker(server_url, onnxruntime_path, dict_dir, model_path, dialogue_file)
         
         # 簡易コンソール
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動")
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動（JSON対応版・VVM切り替え対応・自動再読み込み対応）")
         logger.info("コマンド:")
-        logger.info("  1: 'こんにちは、AudioQuery音韻解析のテストです' - リップシンク発話")
-        logger.info("  2: '坂本先輩、お疲れ様です' - リップシンク発話（漢字テスト）")
-        logger.info("  3: 'あいうえお、かきくけこ、さしすせそ' - リップシンク発話")
+        logger.info("  [セリフキー]: JSONに登録されたセリフを発話")
+        logger.info("  L: JSONセリフ一覧表示")
+        logger.info("  V: VVMモデル一覧表示")
+        logger.info("  VM [モデル名]: VVMモデル切り替え (例: VM 0.vvm)")
         logger.info("  C: カスタムテキストでリップシンク発話")
         logger.info("  A: カスタムテキストで音韻解析のみ")
+        logger.info("  RL: セリフファイル手動再読み込み")
+        logger.info("  AUTO: 自動再読み込み機能の有効/無効切り替え")
         logger.info("  R: 設定リセット（全設定をニュートラルに戻す）")
         logger.info("  T: 口パターンテスト（通常口への復帰をテスト）")
         logger.info("  Q: 終了")
+        logger.info("  💡 JSONファイルを外部で編集すると自動で変更を検知・反映します")
         
-        sample_texts = {
-            "1": "僕の名前はシリウスです",
-            "2": "坂本先輩、お疲れ様です", 
-            "3": "あいうえお、かきくけこ、さしすせそ"
-        }
+        # 初期状態でセリフ一覧を表示
+        logger.info("\n--- 初期セリフ一覧 ---")
+        speaker.dialogue_manager.list_dialogues()
+        logger.info("\n--- VVMモデル一覧 ---")
+        speaker.dialogue_manager.list_vvm_models()
+        logger.info("------------------------\n")
         
         try:
             while True:
-                command = input("\n> ").strip().upper()
+                command = input("\n> ").strip()
                 logger.debug(f"🔧 入力されたコマンド: '{command}' (len={len(command)})")
                 
-                if command in sample_texts:
-                    text = sample_texts[command]
-                    logger.info(f"🎭 サンプル発話: '{text}'")
-                    threading.Thread(target=lambda: speaker.speak_sync(text), daemon=True).start()
+                if command.upper() == "L":
+                    # セリフ一覧表示
+                    logger.info("📋 JSONセリフ一覧:")
+                    speaker.dialogue_manager.list_dialogues()
+                
+                elif command.upper() == "V":
+                    # VVMモデル一覧表示
+                    logger.info("🎤 VVMモデル一覧:")
+                    speaker.dialogue_manager.list_vvm_models()
+                    current_model = speaker.current_vvm_model
+                    model_info = speaker.dialogue_manager.get_vvm_model_info(current_model)
+                    model_name = model_info.get('name', current_model) if model_info else current_model
+                    logger.info(f"📍 現在のモデル: {model_name} ({current_model})")
+                
+                elif command.upper().startswith("VM "):
+                    # VVMモデル切り替え
+                    vvm_name = command[3:].strip()  # "VM " 以降を取得
+                    if vvm_name:
+                        logger.info(f"🎤 VVMモデル切り替え要求: {vvm_name}")
+                        if speaker.switch_vvm_model(vvm_name):
+                            logger.info(f"✅ VVMモデル切り替え成功: {vvm_name}")
+                        else:
+                            logger.warning(f"⚠️ VVMモデル切り替えに失敗: {vvm_name}")
+                    else:
+                        logger.warning("VVMモデル名を指定してください (例: VM 0.vvm)")
                     
-                elif command == "C":
+                elif command.upper() == "C":
                     custom_text = input("発話させたいテキストを入力してください: ").strip()
                     if custom_text:
                         logger.info(f"🎭 カスタム発話: '{custom_text}'")
@@ -859,15 +1284,31 @@ def main():
                     else:
                         logger.warning("テキストが入力されませんでした")
                         
-                elif command == "A":
+                elif command.upper() == "A":
                     custom_text = input("解析するテキストを入力してください: ").strip()
                     if custom_text:
                         logger.info(f"🔍 カスタム音韻解析: '{custom_text}'")
                         speaker.analyzer.print_analysis(custom_text, speaker.style_id)
                     else:
                         logger.warning("テキストが入力されませんでした")
+                
+                elif command.upper() == "RL":
+                    # セリフファイル手動再読み込み
+                    if speaker.dialogue_manager.reload_dialogues():
+                        logger.info("✅ セリフファイル手動再読み込み完了")
+                        speaker.dialogue_manager.list_dialogues()
+                    else:
+                        logger.warning("⚠️ セリフファイル手動再読み込みに失敗しました")
+                
+                elif command.upper() == "AUTO":
+                    # 自動再読み込み機能の有効/無効切り替え
+                    current_status = speaker.dialogue_manager.auto_reload_enabled
+                    new_status = not current_status
+                    speaker.dialogue_manager.set_auto_reload(new_status)
+                    status_text = "有効" if new_status else "無効"
+                    logger.info(f"🔄 自動再読み込み機能を{status_text}にしました")
                         
-                elif command == "R":
+                elif command.upper() == "R":
                     # 全設定をニュートラルにリセット（main.pyのRボタンと同じ機能）
                     logger.info("🔄 全設定をリセット中...")
                     if speaker.talking_controller.reset_to_neutral():
@@ -875,7 +1316,7 @@ def main():
                     else:
                         logger.warning("⚠️ 設定リセットに失敗しました")
                         
-                elif command == "T":
+                elif command.upper() == "T":
                     # 口パターンテスト
                     logger.info("🧪 口パターンテスト開始")
                     logger.info("  1. おしゃべりモード有効化")
@@ -901,15 +1342,25 @@ def main():
                     speaker.talking_controller.set_talking_mode(False)
                     logger.info("🧪 口パターンテスト完了")
                         
-                elif command == "Q":
+                elif command.upper() == "Q":
                     speaker.stop_speaking()
                     # 口だけを通常の口に戻す（表情は維持）
                     speaker.talking_controller.set_mouth_pattern_fast(None)
                     logger.info("👋 システム終了")
                     break
-                    
+                
                 else:
-                    logger.warning("無効なコマンドです")
+                    # JSONセリフキーとして処理を試行
+                    if command:
+                        dialogue = speaker.dialogue_manager.get_dialogue(command)
+                        if dialogue:
+                            # JSONセリフを発話
+                            threading.Thread(target=lambda: speaker.speak_dialogue(command), daemon=True).start()
+                        else:
+                            logger.warning(f"無効なコマンドまたはセリフキーです: '{command}'")
+                            logger.info("利用可能なコマンド: L, V, VM [モデル], C, A, RL, AUTO, R, T, Q または登録済みセリフキー")
+                    else:
+                        logger.warning("コマンドを入力してください")
                     
         except KeyboardInterrupt:
             speaker.stop_speaking()
@@ -928,9 +1379,40 @@ if __name__ == "__main__":
 """
 使用例:
 
-# コンソールモード（対話的）
+# コンソールモード（対話的・JSON対応・VVM切り替え対応・自動再読み込み対応）
 python3 audioquery_phoneme.py
 
+# JSONセリフファイルの編集（リアルタイム反映）
+dialogue_data.jsonを編集すると自動で変更を検知・反映
+- "enabled": true/false でセリフの有効/無効を制御
+- "vvm_model": "13.vvm" でセリフ個別にVVMモデル指定
+- 数値キー（"1", "2", "3"）や文字キー（"hello", "thanks"）に対応
+- 各セリフに個別の音声パラメータ設定可能
+- プログラムを落とさずに変更点がリアルタイムで反映される
+
+# 基本コマンド:
+#   L: セリフ一覧表示（自動で最新JSONを読み込み）
+#   V: VVMモデル一覧表示  
+#   VM [モデル名]: VVMモデル切り替え (例: VM 0.vvm)
+#   [キー]: 指定されたキーのセリフを発話（自動でVVM切り替え・JSON再読み込み）
+#   C: カスタムテキスト発話
+#   RL: 手動セリフファイル再読み込み
+#   AUTO: 自動再読み込み機能の有効/無効切り替え
+#   Q: 終了
+
+# リアルタイム編集ワークフロー:
+# 1. プログラム起動: python3 audioquery_phoneme.py
+# 2. 別エディタでdialogue_data.jsonを編集
+# 3. 任意のコマンドを実行（自動でJSONの変更を検知・反映）
+# 4. すぐに変更されたセリフが利用可能
+
+# VVMモデル切り替え例:
+#   VM 0.vvm  # 四国めたんに切り替え
+#   VM 3.vvm  # 春日部つむぎに切り替え
+#   voice_test_0  # 四国めたんでテスト発話
+#   voice_test_3  # 春日部つむぎでテスト発話
+
+# 従来の音韻解析コマンドも利用可能
 python3 voicevox_lipsync.py --model ./voicevox_core/models/vvms/13.vvm --style-id 54 --speed 1.0 --pitch 0.0 --intonation 0.9
 
 """
