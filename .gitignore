@@ -18,3 +18,14 @@ dist
 python/bin
 python/include
 python/lib
+
+# VOICEVOXの大きなファイル
+python/voicevox_core/models/
+python/voicevox_core/dict/
+python/voicevox_core/onnxruntime/
+*.vvm
+*.dic
+*.dylib
+*.so
+*.dll
+
