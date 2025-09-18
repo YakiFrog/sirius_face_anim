@@ -170,6 +170,16 @@
       "vvm_model": "13.vvm",
       "description": "自己紹介"
     },
+     "k": {
+      "text": "僕の自己位置を教えて",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
     "None": {
       "text": "これは無効化されたセリフです",
       "enabled": false,
