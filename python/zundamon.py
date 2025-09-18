@@ -483,7 +483,7 @@ class ZundamonSpeaker:
             return False
     
     async def speak_async(self, text: str) -> bool:
-        """非同期でセリフを発話（改良版 - 排他制御付き）"""
+        """非同期でセリフを発話（実時間同期版）"""
         
         # 発話処理全体をロックで保護
         if not self._speech_lock.acquire(blocking=False):
@@ -500,15 +500,18 @@ class ZundamonSpeaker:
             
             self.is_speaking = True
             
-            # 1. 音声再生を並行で開始（完了を待たない）
+            # 実際の音声再生時間を追跡するための共有変数
+            audio_duration_result = {'duration': 0.0, 'completed': False}
+            
+            # 1. 音声再生を並行で開始（完了時間を記録）
             logger.info("🔊 音声再生開始...")
             
-            # 音声再生を真に非同期で開始
-            audio_thread = self._start_audio_playback(text)
+            # 音声再生を真に非同期で開始（実時間を返すバージョン）
+            audio_thread = self._start_audio_playback_with_callback(text, audio_duration_result)
             self.current_audio_thread = audio_thread
             
             # 2. 少し待ってから口パクを開始（音声に合わせる）
-            await asyncio.sleep(0.2)  # 音声開始から0.20後に口パク開始
+            await asyncio.sleep(0.2)  # 音声開始から0.20秒後に口パク開始
             
             # 中断チェック
             if not self.is_speaking:
@@ -523,21 +526,29 @@ class ZundamonSpeaker:
             
             logger.info("🎭 口パク開始")
             
-            # 4. 音声再生の完了を待機（推定時間ベース）
-            estimated_duration = self._estimate_speech_duration(text)
-            
-            # 音声再生時間だけ待機（中断チェック付き）
-            check_interval = 0.1  # 100msごとにチェック
+            # 4. 音声再生の実際の完了を待機（実時間ベース）
+            check_interval = 0.05  # 50msごとにチェック（より細かく）
+            max_wait_time = 10.0   # 最大10秒でタイムアウト
             elapsed_time = 0.0
             
-            while elapsed_time < estimated_duration and self.is_speaking:
+            # 音声再生の実際の完了を監視
+            while elapsed_time < max_wait_time and self.is_speaking:
                 await asyncio.sleep(check_interval)
                 elapsed_time += check_interval
+                
+                # 音声再生が実際に完了したかチェック
+                if audio_duration_result['completed']:
+                    actual_duration = audio_duration_result['duration']
+                    logger.info(f"✅ 音声再生実時間完了検出 (実時間: {actual_duration:.2f}秒)")
+                    break
             
-            # 5. 再生完了の確認
+            # 5. 音声再生完了確認
             was_speaking = self.is_speaking
-            if was_speaking:
-                logger.info(f"✅ 音声再生完了 (推定時間: {estimated_duration:.2f}秒)")
+            if was_speaking and audio_duration_result['completed']:
+                actual_duration = audio_duration_result['duration']
+                logger.info(f"✅ 音声再生完了 (実時間: {actual_duration:.2f}秒)")
+            elif was_speaking:
+                logger.warning(f"⚠️ 音声再生タイムアウト (経過時間: {elapsed_time:.2f}秒)")
             
             # 6. おしゃべりモードをオフ
             self.talking_controller.set_talking_mode(False)
@@ -583,14 +594,16 @@ class ZundamonSpeaker:
             logger.error(f"強制停止エラー: {e}")
             self.is_speaking = False
     
-    def _start_audio_playback(self, text: str):
-        """音声再生を真に非同期で開始"""
+    def _start_audio_playback_with_callback(self, text: str, result_dict: dict):
+        """音声再生を真に非同期で開始（実時間コールバック付き）"""
         import threading
         
         def play_audio():
             # 発話中断チェック
             if not self.is_speaking:
                 logger.info("🛑 音声スレッド: 開始前に中断")
+                result_dict['completed'] = True
+                result_dict['duration'] = 0.0
                 return
                 
             self.audio_player.is_playing = True
@@ -599,11 +612,17 @@ class ZundamonSpeaker:
                 # 音声再生開始前にもう一度中断チェック
                 if not self.is_speaking:
                     logger.info("🛑 音声スレッド: 再生開始前に中断")
+                    result_dict['completed'] = True
+                    result_dict['duration'] = 0.0
                     return
                 
-                # 音声再生中も定期的に中断チェック
+                # 音声再生実行
                 duration = self.audio_player.play_say_command(text, self.voice_name)
                 actual_time = time.time() - start_time
+                
+                # 結果を記録
+                result_dict['duration'] = actual_time
+                result_dict['completed'] = True
                 
                 # 中断されていない場合のみログ出力
                 if self.is_speaking:
@@ -618,6 +637,9 @@ class ZundamonSpeaker:
                     logger.error(f"音声再生エラー: {e}")
                 else:
                     logger.info("🛑 音声再生が中断されました（例外）")
+                # エラーでも完了をマーク
+                result_dict['completed'] = True
+                result_dict['duration'] = time.time() - start_time
             finally:
                 self.audio_player.is_playing = False
         
