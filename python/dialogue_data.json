@@ -180,6 +180,46 @@
       "vvm_model": "13.vvm",
       "description": "自己紹介"
     },
+    "y": {
+      "text": "エイチエスアール スタート!",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.2,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "u": {
+      "text": "イット ユーセイ グラスプ ディ アップル",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.3,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+     "i": {
+      "text": "自爆まで残り3秒前．3,,,2,,,1,,, ドガーーーン！！",
+      "enabled": true,
+      "style_id": 109,
+      "speed": 0.9,
+      "pitch": 0.0,
+      "intonation": 1.0,
+      "vvm_model": "21.vvm",
+      "description": "自己紹介"
+    },
+    "e": {
+      "text": "バッテリー残量が少なくなりました．充電してください．",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
     "None": {
       "text": "これは無効化されたセリフです",
       "enabled": false,
@@ -193,19 +233,14 @@
   },
   "vvm_models": {
     "0.vvm": {
-      "path": "./voicevox_core/models/vvms/0.vvm",
-      "name": "四国めたん",
-      "available_styles": [0, 1, 2]
-    },
-    "1.vvm": {
-      "path": "./voicevox_core/models/vvms/1.vvm", 
+      "path": "./voicevox_core/models/vvms/0.vvm", 
       "name": "ずんだもん",
-      "available_styles": [3, 4, 5, 6, 7]
+      "available_styles": [3, 1, 7, 5]
     },
-    "3.vvm": {
-      "path": "./voicevox_core/models/vvms/3.vvm",
-      "name": "春日部つむぎ",
-      "available_styles": [8]
+    "21.vvm": {
+      "path": "./voicevox_core/models/vvms/21.vvm",
+      "name": "東北イタコ",
+      "available_styles": [109]
     },
     "10.vvm": {
       "path": "./voicevox_core/models/vvms/10.vvm",
