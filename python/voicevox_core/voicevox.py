@@ -50,7 +50,7 @@ class Args:
         )
         argparser.add_argument(
             "--text",
-            default="この音声は、ボイスボックスを使用して、出力されています。",
+            default="text = コ'ンニチワ、コレワ'/テ'_ストデ_ス",
             help="読み上げさせたい文章",
         )
         argparser.add_argument(
