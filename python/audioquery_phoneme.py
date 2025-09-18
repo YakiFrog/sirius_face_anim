@@ -10,30 +10,16 @@ import time
 import requests
 import json
 import logging
-import tempfile
 import os
+import platform
+import tempfile
 import io
 import wave
-import platform
-from typing import Optional, Dict, Any, List, Tuple
-from pathlib import Path
-import argparse
+import subprocess
+from typing import Optional, List, Tuple
 
 # VOICEVOX Core関連のインポート
 from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
-
-# 音声再生ライブラリ
-try:
-    import pygame
-    PYGAME_AVAILABLE = True
-except ImportError:
-    PYGAME_AVAILABLE = False
-
-try:
-    import pyaudio
-    PYAUDIO_AVAILABLE = True
-except ImportError:
-    PYAUDIO_AVAILABLE = False
 
 # ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -142,11 +128,10 @@ class TalkingModeController:
             logger.warning(f"セッションクリーンアップエラー: {e}")
 
 class AudioPlayer:
-    """音声再生クラス（voicevox_lipsync.pyから移植）"""
+    """音声再生クラス（macOS対応）"""
     
     def __init__(self):
         self.is_playing = False
-        self.current_process = None
     
     def play_wav_data(self, wav_data: bytes) -> float:
         """WAVデータを再生し、実際の再生時間を返す"""
@@ -154,13 +139,8 @@ class AudioPlayer:
             # 音声の長さを取得
             duration = self._get_wav_duration(wav_data)
             
-            # 再生方法を選択
-            if PYGAME_AVAILABLE:
-                actual_duration = self._play_with_pygame(wav_data)
-            elif PYAUDIO_AVAILABLE:
-                actual_duration = self._play_with_pyaudio(wav_data)
-            else:
-                actual_duration = self._play_with_system(wav_data)
+            # システムコマンドで再生（macOS対応）
+            actual_duration = self._play_with_system(wav_data)
             
             return actual_duration if actual_duration > 0 else duration
             
@@ -180,63 +160,6 @@ class AudioPlayer:
         except Exception:
             return 2.0  # デフォルト値
     
-    def _play_with_pygame(self, wav_data: bytes) -> float:
-        """pygame使用して音声を再生"""
-        try:
-            pygame.mixer.init()
-            
-            start_time = time.time()
-            audio_buffer = io.BytesIO(wav_data)
-            pygame.mixer.music.load(audio_buffer)
-            pygame.mixer.music.play()
-            
-            # 再生完了まで待機
-            while pygame.mixer.music.get_busy():
-                time.sleep(0.01)
-            
-            actual_duration = time.time() - start_time
-            pygame.mixer.quit()
-            
-            logger.info(f"🔊 pygame再生完了 (時間: {actual_duration:.2f}秒)")
-            return actual_duration
-            
-        except Exception as e:
-            logger.error(f"❌ pygame再生エラー: {e}")
-            return 0.0
-    
-    def _play_with_pyaudio(self, wav_data: bytes) -> float:
-        """PyAudio使用して音声を再生"""
-        try:
-            start_time = time.time()
-            audio_buffer = io.BytesIO(wav_data)
-            
-            with wave.open(audio_buffer, 'rb') as wf:
-                p = pyaudio.PyAudio()
-                stream = p.open(
-                    format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    output=True
-                )
-                
-                chunk_size = 1024
-                data = wf.readframes(chunk_size)
-                while data:
-                    stream.write(data)
-                    data = wf.readframes(chunk_size)
-                
-                stream.stop_stream()
-                stream.close()
-                p.terminate()
-            
-            actual_duration = time.time() - start_time
-            logger.info(f"🔊 PyAudio再生完了 (時間: {actual_duration:.2f}秒)")
-            return actual_duration
-            
-        except Exception as e:
-            logger.error(f"❌ PyAudio再生エラー: {e}")
-            return 0.0
-    
     def _play_with_system(self, wav_data: bytes) -> float:
         """システムコマンドで音声再生（プラットフォーム対応）"""
         try:
@@ -247,7 +170,6 @@ class AudioPlayer:
                 temp_file.write(wav_data)
                 temp_path = temp_file.name
             
-            import subprocess
             system = platform.system().lower()
             
             try:
@@ -260,28 +182,23 @@ class AudioPlayer:
                         ['paplay', temp_path],          # PulseAudio
                         ['play', temp_path],            # SoX
                         ['ffplay', '-nodisp', '-autoexit', temp_path],  # FFmpeg
-                        ['mplayer', '-really-quiet', temp_path],        # MPlayer
-                        ['mpv', '--no-video', '--really-quiet', temp_path]  # mpv
                     ]
                     
                     played_successfully = False
                     for cmd in commands_to_try:
                         try:
-                            logger.info(f"🔊 音声再生試行: {cmd[0]}")
                             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                             played_successfully = True
-                            logger.info(f"✅ {cmd[0]}で再生成功")
                             break
                         except (subprocess.CalledProcessError, FileNotFoundError):
                             continue
                     
                     if not played_successfully:
                         logger.error("❌ 利用可能な音声再生コマンドが見つかりません")
-                        logger.error("以下のいずれかをインストールしてください: aplay, paplay, play, ffplay, mplayer, mpv")
                         return 0.0
                         
                 elif system == "windows":
-                    # Windowsの場合（参考）
+                    # Windowsの場合
                     import winsound
                     winsound.PlaySound(temp_path, winsound.SND_FILENAME)
                 else:
@@ -296,11 +213,11 @@ class AudioPlayer:
                     pass
             
             actual_duration = time.time() - start_time
-            logger.info(f"🔊 システム再生完了 (時間: {actual_duration:.2f}秒)")
+            logger.info(f"🔊 音声再生完了 (時間: {actual_duration:.2f}秒)")
             return actual_duration
             
         except Exception as e:
-            logger.error(f"❌ システム再生エラー: {e}")
+            logger.error(f"❌ 音声再生エラー: {e}")
             return 0.0
 
 class AudioQueryPhonemeAnalyzer:
@@ -369,9 +286,8 @@ class AudioQueryPhonemeAnalyzer:
             audio_query = self.synthesizer.create_audio_query(text, style_id)
             
             # デバッグ: AudioQueryの構造を確認
-            logger.info(f"🔧 DEBUG: AudioQuery属性 = {[attr for attr in dir(audio_query) if not attr.startswith('_')]}")
             if hasattr(audio_query, 'accent_phrases'):
-                logger.info(f"🔧 DEBUG: accent_phrases数 = {len(audio_query.accent_phrases)}")
+                logger.info(f"🔧 accent_phrases数 = {len(audio_query.accent_phrases)}")
             
             phoneme_timeline = []
             total_duration = 0.0
@@ -384,7 +300,6 @@ class AudioQueryPhonemeAnalyzer:
                     pre_length = float(audio_query.pre_phoneme_length)
                     phoneme_timeline.append(('sil', None, pre_length))
                     total_duration += pre_length
-                    logger.info(f"🔧 DEBUG: 前音韻長追加: {pre_length}秒")
                 
                 for accent_phrase in audio_query.accent_phrases:
                     if hasattr(accent_phrase, 'moras'):
@@ -412,10 +327,6 @@ class AudioQueryPhonemeAnalyzer:
                                 
                                 if hasattr(mora, 'vowel_length') and mora.vowel_length is not None:
                                     vowel_duration = float(mora.vowel_length)
-                                else:
-                                    # デバッグ: moraの全属性をログ出力
-                                    logger.warning(f"🔧 DEBUG: mora属性 = {[attr for attr in dir(mora) if not attr.startswith('_')]}")
-                                    logger.warning(f"🔧 DEBUG: vowel_length = {getattr(mora, 'vowel_length', 'NOT_FOUND')}")
                                 
                                 if vowel_duration > 0:
                                     mouth_shape = self.phoneme_to_mouth.get(vowel_phoneme, 'a')
@@ -429,27 +340,20 @@ class AudioQueryPhonemeAnalyzer:
                         # pause_moraは辞書形式、vowel_lengthキーから時間を取得
                         if isinstance(accent_phrase.pause_mora, dict):
                             pause_duration = accent_phrase.pause_mora.get('vowel_length', 0.0)
-                            logger.info(f"🔧 DEBUG: ポーズ辞書 = {accent_phrase.pause_mora}")
-                            logger.info(f"🔧 DEBUG: ポーズ時間(vowel_length) = {pause_duration}")
                         else:
                             # オブジェクトの場合
                             if hasattr(accent_phrase.pause_mora, 'vowel_length'):
                                 pause_duration = float(accent_phrase.pause_mora.vowel_length)
-                                logger.info(f"🔧 DEBUG: ポーズ時間(属性) = {pause_duration}")
                         
                         if pause_duration > 0:
                             phoneme_timeline.append(('pau', 'i', pause_duration))
                             total_duration += pause_duration
-                            logger.info(f"🔧 DEBUG: ポーズ追加: {pause_duration}秒")
-                        else:
-                            logger.warning(f"🔧 DEBUG: ポーズ時間が0秒のためスキップ")
                 
                 # 後音韻長を追加
                 if hasattr(audio_query, 'post_phoneme_length') and audio_query.post_phoneme_length > 0:
                     post_length = float(audio_query.post_phoneme_length)
                     phoneme_timeline.append(('sil', None, post_length))
                     total_duration += post_length
-                    logger.info(f"🔧 DEBUG: 後音韻長追加: {post_length}秒")
             
             logger.info(f"✅ AudioQuery音韻解析完了: {len(phoneme_timeline)}音韻, 総時間: {total_duration:.2f}秒")
             
@@ -590,8 +494,8 @@ class AudioQueryLipSyncSpeaker:
         
         # 音声パラメータ
         self.speed_scale = 1.0
-        self.pitch_scale = 0.08
-        self.intonation_scale = 0.0
+        self.pitch_scale = 0.00
+        self.intonation_scale = 0.9
         self.style_id = self.voicevox.default_style_id
         
         # セッション管理用
@@ -673,18 +577,32 @@ class AudioQueryLipSyncSpeaker:
             if not talking_mode_task.done():
                 await talking_mode_task
             
-            # 8. 音声再生の完了を待機
-            while not audio_result['completed'] and self.is_speaking:
-                await asyncio.sleep(0.05)
+            # 8. 音声再生の完了を待機（短いインターバルで監視）
+            max_wait_time = actual_audio_duration + 2.0  # 最大待機時間（実際の音声長 + 2秒）
+            waited_time = 0.0
             
-            # 9. リップシンク終了 - 口を「i」の形にして終了（高速化）
+            while not audio_result['completed'] and self.is_speaking and waited_time < max_wait_time:
+                await asyncio.sleep(0.02)  # 20ms毎にチェック
+                waited_time += 0.02
+            
+            # タイムアウトした場合の警告
+            if waited_time >= max_wait_time:
+                logger.warning(f"⚠️ 音声再生完了の待機がタイムアウト ({max_wait_time:.1f}秒)")
+            
+            # 7. リップシンク終了 - 口を「i」の形にして終了
+            logger.info("🎭 リップシンク終了処理開始")
             self.talking_controller.set_mouth_pattern_fast('mouth_i')
             
             # おしゃべりモード無効化
             self.talking_controller.set_talking_mode(False)
             self.is_speaking = False
             
-            logger.info("✅ AudioQuery音韻解析リップシンク発話完了")
+            # 最終的な状態確認
+            if audio_result['completed']:
+                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (音声再生完了)")
+            else:
+                logger.info(f"✅ AudioQuery音韻解析リップシンク発話完了 (タイムアウト)")
+            
             return True
             
         except Exception as e:
@@ -699,7 +617,7 @@ class AudioQueryLipSyncSpeaker:
             self._speech_lock.release()
     
     def _adjust_sequence_to_audio_length(self, mouth_sequence: List[Tuple[str, float]], actual_duration: float) -> List[Tuple[str, float]]:
-        """音韻シーケンスを実際の音声長に合わせて調整"""
+        """音韻シーケンスを実際の音声長に合わせて調整（口パク高速化版）"""
         if not mouth_sequence:
             return []
         
@@ -712,27 +630,36 @@ class AudioQueryLipSyncSpeaker:
         # 調整比率を計算
         adjustment_ratio = actual_duration / current_total
         
-        logger.info(f"🔧 時間調整: 計算時間 {current_total:.2f}秒 → 実際時間 {actual_duration:.2f}秒 (比率: {adjustment_ratio:.2f})")
+        # 口パク高速化係数（0.8倍で20%高速化）
+        speed_factor = 0.8
+        adjustment_ratio *= speed_factor
+        
+        logger.info(f"🔧 時間調整: 計算時間 {current_total:.2f}秒 → 実際時間 {actual_duration:.2f}秒 (高速化係数: {speed_factor})")
         
         # 各音韻の時間を調整
         adjusted_sequence = []
         for mouth_shape, duration in mouth_sequence:
             adjusted_duration = duration * adjustment_ratio
-            # 最小時間を保証（短すぎると認識しにくい）
-            # 高速化のため最小時間をさらに短縮
-            adjusted_duration = max(adjusted_duration, 0.03)
-            adjusted_sequence.append((mouth_shape, adjusted_duration))
+            
+            # より短い最小時間（20ms）と最大時間制限（150ms）
+            adjusted_duration = max(adjusted_duration, 0.02)  # 最小20ms
+            adjusted_duration = min(adjusted_duration, 0.15)  # 最大150ms
+            
+            # 長い音韻は分割してより活発な口パクにする
+            if adjusted_duration > 0.1:  # 100ms以上の場合
+                # 2つに分割
+                split_duration = adjusted_duration / 2
+                adjusted_sequence.append((mouth_shape, split_duration))
+                adjusted_sequence.append((mouth_shape, split_duration))
+            else:
+                adjusted_sequence.append((mouth_shape, adjusted_duration))
         
         return adjusted_sequence
     
     async def _delayed_talking_mode_activation(self):
-        """0.5秒後におしゃべりモードを有効化"""
         try:
-            logger.info("⏰ 0.5秒待機中（おしゃべりモード有効化まで）...")
-            await asyncio.sleep(0.5)
-            
             if self.is_speaking:
-                logger.info("🎭 0.5秒経過 - おしゃべりモード有効化")
+                logger.info("🎭おしゃべりモード有効化")
                 if not self.talking_controller.set_talking_mode(True):
                     logger.warning("⚠️ おしゃべりモード有効化に失敗（サーバー接続エラー）")
                 else:
@@ -744,7 +671,7 @@ class AudioQueryLipSyncSpeaker:
             logger.error(f"❌ 遅延おしゃべりモード有効化エラー: {e}")
     
     async def _execute_audioquery_lipsync(self, mouth_sequence: List[Tuple[str, float]], audio_result: dict):
-        """AudioQuery音韻に基づくリップシンクを実行（高速化版）"""
+        """AudioQuery音韻に基づくリップシンクを実行（音声再生同期版）"""
         try:
             elapsed_time = 0.0
             last_pattern = None  # 冗長リクエスト防止
@@ -754,10 +681,11 @@ class AudioQueryLipSyncSpeaker:
             if self._session_cleanup_counter >= self._session_cleanup_interval:
                 self.talking_controller.cleanup_session()
                 self._session_cleanup_counter = 0
-                logger.debug("🧹 HTTPセッションクリーンアップ実行")
             
             for i, (mouth_shape, duration) in enumerate(mouth_sequence):
-                if not self.is_speaking:
+                # 音声再生が完了したかチェック
+                if audio_result['completed'] or not self.is_speaking:
+                    logger.info(f"🛑 音声再生完了検出 - リップシンク早期終了 ({i+1}/{len(mouth_sequence)})")
                     break
                 
                 # 音韻解析の口形状をサーバー形式に変換
@@ -770,9 +698,20 @@ class AudioQueryLipSyncSpeaker:
                     if success:
                         last_pattern = server_pattern
                 
-                # 高精度タイミング制御
+                # 高精度タイミング制御（音声再生状況を監視しながら）
                 loop_start = time.time()
-                await asyncio.sleep(max(0.001, duration - 0.005))  # 少し早めに終了
+                remaining_duration = duration
+                
+                # より細かくチェック（30ms毎）して口パクを活発に
+                while remaining_duration > 0 and not audio_result['completed'] and self.is_speaking:
+                    sleep_duration = min(0.03, remaining_duration)  # 30ms毎にチェック
+                    await asyncio.sleep(sleep_duration)
+                    remaining_duration -= sleep_duration
+                
+                # 音声再生が完了していたら即座に終了
+                if audio_result['completed']:
+                    logger.info(f"🛑 音声再生完了により早期終了 - 音韻 {i+1}/{len(mouth_sequence)}")
+                    break
                 
                 # 実際の経過時間を記録
                 actual_duration = time.time() - loop_start
@@ -828,247 +767,83 @@ class AudioQueryLipSyncSpeaker:
             time.sleep(0.05)  # 短縮
             logger.info("✅ 発話を中断しました（口形状: i）")
 
-class AudioQueryPhonemeConsole:
-    """AudioQuery音韻解析コンソール"""
-    
-    def __init__(self, voicevox_synthesizer: VoiceVoxSynthesizer):
-        self.voicevox = voicevox_synthesizer
-        self.analyzer = AudioQueryPhonemeAnalyzer(voicevox_synthesizer.synthesizer)
-        self.current_style_id = voicevox_synthesizer.default_style_id
-        self.is_running = False
-        
-        # サンプルテキスト
-        self.sample_texts = {
-            "1": "坂本先輩",
-            "2": "こんにちは、音韻解析のテストです",
-            "3": "私の名前はシリウスです",
-            "4": "今日はとても良い天気ですね",
-            "5": "AudioQueryを使った音韻解析システム",
-            "6": "あいうえお、かきくけこ、さしすせそ",
-        }
-    
-    def show_help(self):
-        """ヘルプ表示"""
-        logger.info("🤖 AudioQuery音韻解析システム")
-        logger.info("利用可能なコマンド:")
-        
-        for key, text in self.sample_texts.items():
-            short_text = text[:20] + "..." if len(text) > 20 else text
-            logger.info(f"  {key}: サンプル解析 - '{short_text}'")
-        
-        logger.info("  C: カスタムテキスト解析")
-        logger.info("  L: 利用可能なスタイル一覧")
-        logger.info("  S: スタイル変更")
-        logger.info("  T: 現在の設定表示")
-        logger.info("  H: ヘルプ表示")
-        logger.info("  Q: 終了")
-    
-    def show_styles(self):
-        """利用可能なスタイル一覧を表示"""
-        styles = self.voicevox.available_styles
-        logger.info("📋 利用可能なスタイル:")
-        for i, style in enumerate(styles):
-            current = " ← 現在選択中" if style['style_id'] == self.current_style_id else ""
-            logger.info(f"  {i+1:2d}. {style['character']} - {style['style_name']} (ID: {style['style_id']}){current}")
-    
-    def set_style(self):
-        """スタイル設定"""
-        try:
-            styles = self.voicevox.available_styles
-            print("\n🎵 スタイル設定:")
-            print("利用可能なスタイル:")
-            for i, style in enumerate(styles):
-                current = " ← 現在選択中" if style['style_id'] == self.current_style_id else ""
-                print(f"  {i+1:2d}. {style['character']} - {style['style_name']} (ID: {style['style_id']}){current}")
-            
-            style_choice = input("スタイル番号を選択: ").strip()
-            if style_choice:
-                try:
-                    style_index = int(style_choice) - 1
-                    if 0 <= style_index < len(styles):
-                        self.current_style_id = styles[style_index]['style_id']
-                        selected_style = styles[style_index]
-                        logger.info(f"✅ スタイル変更: {selected_style['character']} - {selected_style['style_name']} (ID: {self.current_style_id})")
-                    else:
-                        logger.warning("❌ 無効な番号です")
-                except ValueError:
-                    logger.warning("❌ 数値を入力してください")
-            
-        except Exception as e:
-            logger.warning(f"❌ スタイル設定エラー: {e}")
-    
-    def analyze_sample(self, key: str):
-        """サンプルテキストを解析"""
-        if key in self.sample_texts:
-            text = self.sample_texts[key]
-            logger.info(f"🔍 サンプル解析開始: '{text}'")
-            self.analyzer.print_analysis(text, self.current_style_id)
-        else:
-            logger.warning(f"❌ サンプル'{key}'は存在しません")
-    
-    def analyze_custom(self):
-        """カスタムテキストを解析"""
-        text = input("解析するテキストを入力してください: ").strip()
-        if text:
-            logger.info(f"🔍 カスタム解析開始: '{text}'")
-            self.analyzer.print_analysis(text, self.current_style_id)
-        else:
-            logger.warning("テキストが入力されませんでした")
-    
-    def show_status(self):
-        """現在の設定表示"""
-        current_style = next((s for s in self.voicevox.available_styles if s['style_id'] == self.current_style_id), None)
-        logger.info("📊 現在の設定:")
-        if current_style:
-            logger.info(f"  スタイル: {current_style['character']} - {current_style['style_name']} (ID: {self.current_style_id})")
-        logger.info(f"  利用可能なスタイル数: {len(self.voicevox.available_styles)}")
-    
-    def start(self):
-        """コンソール開始"""
-        self.is_running = True
-        logger.info("🤖 AudioQuery音韻解析システム起動")
-        self.show_help()
-        
-        try:
-            while self.is_running:
-                try:
-                    command = input("\n> ").strip().upper()
-                    
-                    if command in self.sample_texts:
-                        self.analyze_sample(command)
-                    elif command == "C":
-                        self.analyze_custom()
-                    elif command == "L":
-                        self.show_styles()
-                    elif command == "S":
-                        self.set_style()
-                    elif command == "T":
-                        self.show_status()
-                    elif command == "H":
-                        self.show_help()
-                    elif command == "Q":
-                        self.is_running = False
-                        logger.info("👋 システム終了")
-                    else:
-                        logger.warning("無効なコマンドです。'H'でヘルプを表示")
-                        
-                except KeyboardInterrupt:
-                    self.is_running = False
-                    logger.info("\n👋 システム終了")
-                except Exception as e:
-                    logger.error(f"コマンド実行エラー: {e}")
-        
-        except Exception as e:
-            logger.error(f"システムエラー: {e}")
-
 def main():
-    """メイン関数"""
-    parser = argparse.ArgumentParser(description='AudioQuery音韻解析 + リップシンクシステム')
-    parser.add_argument('--server', default='http://localhost:8080',
-                       help='HTTPサーバーのURL (デフォルト: http://localhost:8080)')
-    parser.add_argument('--onnxruntime', default=get_default_onnxruntime_path(),
-                       help='ONNX Runtimeライブラリのパス')
-    parser.add_argument('--dict-dir', default='./voicevox_core/dict/open_jtalk_dic_utf_8-1.11',
-                       help='Open JTalk辞書ディレクトリ')
-    parser.add_argument('--model', default='./voicevox_core/models/vvms/13.vvm',
-                       help='VOICEVOXモデルファイルのパス')
-    parser.add_argument('--text', type=str,
-                       help='音韻解析するテキスト（指定した場合は解析のみ実行）')
-    parser.add_argument('--speak', type=str,
-                       help='発話させるテキスト（指定した場合はリップシンク発話して終了）')
-    parser.add_argument('--style-id', type=int, default=54,
-                       help='スタイルID')
-    parser.add_argument('--mode', choices=['analyze', 'speak', 'console'], default='console',
-                       help='動作モード: analyze=解析のみ, speak=リップシンク発話, console=対話型')
-    
-    args = parser.parse_args()
-    
+    """メイン関数（簡素化版）"""
     try:
         # ファイル存在チェック
-        logger.info(f"🔍 ファイル存在チェック:")
-        logger.info(f"  ONNX Runtime: {args.onnxruntime} - {'存在' if os.path.exists(args.onnxruntime) else '存在しない'}")
-        logger.info(f"  辞書: {args.dict_dir} - {'存在' if os.path.exists(args.dict_dir) else '存在しない'}")
-        logger.info(f"  モデル: {args.model} - {'存在' if os.path.exists(args.model) else '存在しない'}")
+        onnxruntime_path = get_default_onnxruntime_path()
+        dict_dir = './voicevox_core/dict/open_jtalk_dic_utf_8-1.11'
+        model_path = './voicevox_core/models/vvms/13.vvm'
+        server_url = 'http://localhost:8080'
+        style_id = 54
         
-        if args.text:
-            # テキスト解析のみ
-            logger.info("📊 AudioQuery音韻解析モード")
-            voicevox = VoiceVoxSynthesizer(args.onnxruntime, args.dict_dir, args.model)
-            analyzer = AudioQueryPhonemeAnalyzer(voicevox.synthesizer)
-            analyzer.print_analysis(args.text, args.style_id)
-            
-        elif args.speak:
-            # リップシンク発話モード
-            logger.info("🎭 AudioQueryリップシンク発話モード")
-            speaker = AudioQueryLipSyncSpeaker(args.server, args.onnxruntime, args.dict_dir, args.model)
-            speaker.style_id = args.style_id
-            speaker.speak_sync(args.speak, args.style_id)
-            
-        else:
-            # コンソールモード - AudioQueryリップシンク対応
-            logger.info("🤖 AudioQueryリップシンクコンソールモード")
-            
-            # リップシンク機能付きスピーカーを初期化
-            speaker = AudioQueryLipSyncSpeaker(args.server, args.onnxruntime, args.dict_dir, args.model)
-            speaker.style_id = args.style_id
-            
-            # 簡易コンソール
-            logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動")
-            logger.info("コマンド:")
-            logger.info("  1: 'こんにちは、AudioQuery音韻解析のテストです' - リップシンク発話")
-            logger.info("  2: '坂本先輩、お疲れ様です' - リップシンク発話（漢字テスト）")
-            logger.info("  3: 'あいうえお、かきくけこ、さしすせそ' - リップシンク発話")
-            logger.info("  C: カスタムテキストでリップシンク発話")
-            logger.info("  A: カスタムテキストで音韻解析のみ")
-            logger.info("  Q: 終了")
-            
-            sample_texts = {
-                "1": "僕の名前はシリウスです",
-                "2": "坂本先輩、お疲れ様です",
-                "3": "あいうえお、かきくけこ、さしすせそ"
-            }
-            
-            try:
-                while True:
-                    command = input("\n> ").strip().upper()
+        logger.info(f"🔍 ファイル存在チェック:")
+        logger.info(f"  ONNX Runtime: {onnxruntime_path} - {'存在' if os.path.exists(onnxruntime_path) else '存在しない'}")
+        logger.info(f"  辞書: {dict_dir} - {'存在' if os.path.exists(dict_dir) else '存在しない'}")
+        logger.info(f"  モデル: {model_path} - {'存在' if os.path.exists(model_path) else '存在しない'}")
+        
+        # リップシンク機能付きスピーカーを初期化
+        speaker = AudioQueryLipSyncSpeaker(server_url, onnxruntime_path, dict_dir, model_path)
+        speaker.style_id = style_id
+        
+        # 簡易コンソール
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動")
+        logger.info("コマンド:")
+        logger.info("  1: 'こんにちは、AudioQuery音韻解析のテストです' - リップシンク発話")
+        logger.info("  2: '坂本先輩、お疲れ様です' - リップシンク発話（漢字テスト）")
+        logger.info("  3: 'あいうえお、かきくけこ、さしすせそ' - リップシンク発話")
+        logger.info("  C: カスタムテキストでリップシンク発話")
+        logger.info("  A: カスタムテキストで音韻解析のみ")
+        logger.info("  Q: 終了")
+        
+        sample_texts = {
+            "1": "僕の名前はシリウスです",
+            "2": "坂本先輩、お疲れ様です", 
+            "3": "あいうえお、かきくけこ、さしすせそ"
+        }
+        
+        try:
+            while True:
+                command = input("\n> ").strip().upper()
+                logger.debug(f"🔧 入力されたコマンド: '{command}' (len={len(command)})")
+                
+                if command in sample_texts:
+                    text = sample_texts[command]
+                    logger.info(f"🎭 サンプル発話: '{text}'")
+                    threading.Thread(target=lambda: speaker.speak_sync(text), daemon=True).start()
                     
-                    if command in sample_texts:
-                        text = sample_texts[command]
-                        logger.info(f"🎭 サンプル発話: '{text}'")
-                        threading.Thread(target=lambda: speaker.speak_sync(text), daemon=True).start()
-                        
-                    elif command == "C":
-                        custom_text = input("発話させたいテキストを入力してください: ").strip()
-                        if custom_text:
-                            logger.info(f"🎭 カスタム発話: '{custom_text}'")
-                            threading.Thread(target=lambda: speaker.speak_sync(custom_text), daemon=True).start()
-                        else:
-                            logger.warning("テキストが入力されませんでした")
-                            
-                    elif command == "A":
-                        custom_text = input("解析するテキストを入力してください: ").strip()
-                        if custom_text:
-                            logger.info(f"🔍 カスタム音韻解析: '{custom_text}'")
-                            speaker.analyzer.print_analysis(custom_text, speaker.style_id)
-                        else:
-                            logger.warning("テキストが入力されませんでした")
-                            
-                    elif command == "Q":
-                        speaker.stop_speaking()
-                        # 高速終了処理
-                        speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
-                        logger.info("👋 システム終了")
-                        break
-                        
+                elif command == "C":
+                    custom_text = input("発話させたいテキストを入力してください: ").strip()
+                    if custom_text:
+                        logger.info(f"🎭 カスタム発話: '{custom_text}'")
+                        threading.Thread(target=lambda: speaker.speak_sync(custom_text), daemon=True).start()
                     else:
-                        logger.warning("無効なコマンドです")
+                        logger.warning("テキストが入力されませんでした")
                         
-            except KeyboardInterrupt:
-                speaker.stop_speaking()
-                # Ctrl+C終了時も高速処理
-                speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
-                logger.info("\n👋 システム終了")
-            
+                elif command == "A":
+                    custom_text = input("解析するテキストを入力してください: ").strip()
+                    if custom_text:
+                        logger.info(f"🔍 カスタム音韻解析: '{custom_text}'")
+                        speaker.analyzer.print_analysis(custom_text, speaker.style_id)
+                    else:
+                        logger.warning("テキストが入力されませんでした")
+                        
+                elif command == "Q":
+                    speaker.stop_speaking()
+                    # 高速終了処理
+                    speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
+                    logger.info("👋 システム終了")
+                    break
+                    
+                else:
+                    logger.warning("無効なコマンドです")
+                    
+        except KeyboardInterrupt:
+            speaker.stop_speaking()
+            # Ctrl+C終了時も高速処理
+            speaker.talking_controller.set_mouth_pattern_fast('mouth_i')
+            logger.info("\n👋 システム終了")
+        
     except Exception as e:
         logger.error(f"❌ システム初期化エラー: {e}")
         import traceback
@@ -1083,9 +858,6 @@ if __name__ == "__main__":
 # コンソールモード（対話的）
 python3 audioquery_phoneme.py
 
-# 特定テキストの音韻解析
-python3 audioquery_phoneme.py --text "坂本先輩" --style-id 54
+python3 voicevox_lipsync.py --model ./voicevox_core/models/vvms/13.vvm --style-id 54 --speed 1.0 --pitch 0.0 --intonation 0.9
 
-# パラメータ指定
-python3 audioquery_phoneme.py --model ./voicevox_core/models/vvms/13.vvm --style-id 54
 """
