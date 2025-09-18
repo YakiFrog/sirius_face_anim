@@ -140,6 +140,36 @@
       "vvm_model": "13.vvm",
       "description": "自己紹介"
     },
+    "g": {
+      "text": "うん, わかった！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.2,
+      "pitch": 0.0,
+      "intonation": 1.0,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "h": {
+      "text": "うん, だいたいわかった！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.2,
+      "pitch": 0.0,
+      "intonation": 1.0,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "j": {
+      "text": "そうだね！よくわかる！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 1.0,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
     "None": {
       "text": "これは無効化されたセリフです",
       "enabled": false,
