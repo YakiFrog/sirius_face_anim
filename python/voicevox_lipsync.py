@@ -535,17 +535,76 @@ class VoiceVoxConsole:
     def __init__(self, speaker: VoiceVoxLipSyncSpeaker):
         self.speaker = speaker
         self.is_running = False
+        
+        # プリセットセリフの設定（ファイルから読み込み、なければデフォルト）
+        self.preset_speeches = self._load_preset_speeches()
+    
+    def _load_preset_speeches(self) -> dict:
+        """プリセットセリフをファイルから読み込み"""
+        speech_file = "preset_speeches.json"
+        
+        # デフォルトのセリフ設定
+        default_speeches = {
+            "1": {
+                "text": "こんにちは、僕の名前はシリウスです。",
+                "description": "挨拶"
+            },
+            "2": {
+                "text": "おはようございます！今日も良い一日を。",
+                "description": "朝の挨拶"
+            },
+            "3": {
+                "text": "お疲れ様でした！",
+                "description": "お疲れ様"
+            },
+            "4": {
+                "text": "ありがとうございます。",
+                "description": "感謝"
+            },
+            "5": {
+                "text": "また明日お会いしましょう。",
+                "description": "別れの挨拶"
+            }
+        }
+        
+        try:
+            if os.path.exists(speech_file):
+                with open(speech_file, 'r', encoding='utf-8') as f:
+                    loaded_speeches = json.load(f)
+                logger.info(f"📄 プリセットセリフファイル読み込み完了: {speech_file}")
+                logger.info(f"🎭 読み込んだセリフ数: {len(loaded_speeches)}")
+                return loaded_speeches
+            else:
+                logger.info(f"📄 プリセットセリフファイルが見つかりません: {speech_file}")
+                logger.info("🎭 デフォルトセリフを使用します")
+                # デフォルトファイルを作成
+                self._save_preset_speeches(default_speeches, speech_file)
+                return default_speeches
+        except Exception as e:
+            logger.error(f"❌ プリセットセリフファイル読み込みエラー: {e}")
+            logger.info("🎭 デフォルトセリフを使用します")
+            return default_speeches
+    
+    def _save_preset_speeches(self, speeches: dict, filename: str):
+        """プリセットセリフをファイルに保存"""
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(speeches, f, ensure_ascii=False, indent=4)
+            logger.info(f"💾 プリセットセリフファイル保存完了: {filename}")
+        except Exception as e:
+            logger.error(f"❌ プリセットセリフファイル保存エラー: {e}")
     
     def show_help(self):
         """ヘルプ表示"""
         logger.info("🤖 VOICEVOX + リップシンクシステム")
         logger.info("利用可能なコマンド:")
-        logger.info("  1: 'こんにちは、私はVOICEVOXです。'")
-        logger.info("  2: 'おはようございます！今日も良い一日を。'")
-        logger.info("  3: 'お疲れ様でした！'")
-        logger.info("  4: 'ありがとうございます。'")
-        logger.info("  5: 'また明日お会いしましょう。'")
+        
+        # プリセットセリフを動的に表示
+        for key, speech in self.preset_speeches.items():
+            logger.info(f"  {key}: {speech['description']} - '{speech['text']}'")
+        
         logger.info("  C: カスタムテキスト入力")
+        logger.info("  R: プリセットセリフ再読み込み")
         logger.info("  P: 音声パラメータ設定")
         logger.info("  L: 利用可能なスタイル一覧")
         logger.info("  S: 状態表示")
@@ -588,11 +647,32 @@ class VoiceVoxConsole:
         except ValueError:
             logger.warning("❌ 無効な値が入力されました")
     
+    def speak_preset(self, key: str):
+        """プリセットセリフを発話"""
+        if key in self.preset_speeches:
+            speech = self.preset_speeches[key]
+            logger.info(f"🎭 プリセット発話: {speech['description']}")
+            threading.Thread(
+                target=lambda: self.speaker.speak_sync(speech['text']), 
+                daemon=True
+            ).start()
+        else:
+            logger.warning(f"❌ プリセット'{key}'は存在しません")
+    
+    def reload_preset_speeches(self):
+        """プリセットセリフファイルを再読み込み"""
+        logger.info("🔄 プリセットセリフファイルを再読み込み中...")
+        old_count = len(self.preset_speeches)
+        self.preset_speeches = self._load_preset_speeches()
+        new_count = len(self.preset_speeches)
+        logger.info(f"✅ 再読み込み完了: {old_count} → {new_count} セリフ")
+    
     def show_status(self):
         """状態表示"""
         logger.info("📊 現在の状態:")
         logger.info(f"  おしゃべりモード: {'有効' if self.speaker.talking_controller.is_talking_mode_active else '無効'}")
         logger.info(f"  発話中: {'はい' if self.speaker.is_speaking else 'いいえ'}")
+        logger.info(f"  プリセットセリフ数: {len(self.preset_speeches)}")
         logger.info(f"  話速: {self.speaker.speed_scale}")
         logger.info(f"  ピッチ: {self.speaker.pitch_scale}")
         logger.info(f"  抑揚: {self.speaker.intonation_scale}")
@@ -609,22 +689,17 @@ class VoiceVoxConsole:
                 try:
                     command = input("\n> ").strip().upper()
                     
-                    if command == "1":
-                        threading.Thread(target=lambda: self.speaker.speak_sync("こんにちは、僕の名前はシリウスです。"), daemon=True).start()
-                    elif command == "2":
-                        threading.Thread(target=lambda: self.speaker.speak_sync("おはようございます！今日も良い一日を。"), daemon=True).start()
-                    elif command == "3":
-                        threading.Thread(target=lambda: self.speaker.speak_sync("お疲れ様でした！"), daemon=True).start()
-                    elif command == "4":
-                        threading.Thread(target=lambda: self.speaker.speak_sync("ありがとうございます。"), daemon=True).start()
-                    elif command == "5":
-                        threading.Thread(target=lambda: self.speaker.speak_sync("また明日お会いしましょう。"), daemon=True).start()
+                    # プリセットセリフをチェック
+                    if command in self.preset_speeches:
+                        self.speak_preset(command)
                     elif command == "C":
                         custom_text = input("発話させたいテキストを入力してください: ").strip()
                         if custom_text:
                             threading.Thread(target=lambda: self.speaker.speak_sync(custom_text), daemon=True).start()
                         else:
                             logger.warning("テキストが入力されませんでした")
+                    elif command == "R":
+                        self.reload_preset_speeches()
                     elif command == "P":
                         self.set_voice_parameters()
                     elif command == "L":
