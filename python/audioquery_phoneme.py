@@ -26,6 +26,73 @@ from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceMod
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+class ExpressionController:
+    """表情制御クラス（main.pyのAPI連携）"""
+    
+    def __init__(self, server_url="http://localhost:8080"):
+        self.server_url = server_url
+        
+        # HTTPセッション設定
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'
+        })
+        
+        # コネクションプールの設定
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=1,
+            pool_maxsize=1,
+            max_retries=0
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+    
+    def set_expression(self, expression: str) -> bool:
+        """表情を設定"""
+        try:
+            response = self.session.post(
+                f"{self.server_url}/expression",
+                json={'expression': expression},
+                timeout=0.2
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ 表情設定成功: {expression}")
+                return True
+            else:
+                logger.warning(f"❌ 表情設定失敗: HTTP {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"❌ 表情設定エラー: {e}")
+            return False
+    
+    def get_current_expression(self) -> Optional[str]:
+        """現在の表情を取得"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/expression",
+                timeout=0.2
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('expression')
+            else:
+                return None
+                
+        except Exception as e:
+            logger.warning(f"❌ 表情取得エラー: {e}")
+            return None
+    
+    def cleanup_session(self):
+        """セッションのクリーンアップ"""
+        try:
+            self.session.close()
+        except Exception as e:
+            logger.warning(f"表情制御セッションクリーンアップエラー: {e}")
+
 class DialogueManager:
     """JSONファイルでセリフを管理するクラス"""
     
@@ -582,7 +649,7 @@ class AudioQueryPhonemeAnalyzer:
                                     phoneme_timeline.append((vowel_phoneme, mouth_shape, vowel_duration))
                                     total_duration += vowel_duration
                     
-                                        # ポーズ処理
+                    # ポーズ処理
                     if hasattr(accent_phrase, 'pause_mora') and accent_phrase.pause_mora:
                         pause_duration = 0.0
                         
@@ -788,6 +855,7 @@ class AudioQueryLipSyncSpeaker:
                  dialogue_file_path="./dialogue_data.json"):
         
         self.talking_controller = TalkingModeController(server_url)
+        self.expression_controller = ExpressionController(server_url)  # 表情制御を追加
         self.audio_player = AudioPlayer()
         self.voicevox = VoiceVoxSynthesizer(voicevox_onnxruntime_path, open_jtalk_dict_dir, model_path)
         self.analyzer = AudioQueryPhonemeAnalyzer(self.voicevox.synthesizer)
@@ -810,7 +878,7 @@ class AudioQueryLipSyncSpeaker:
         self._session_cleanup_counter = 0
         self._session_cleanup_interval = 50  # 50回に1回セッションをクリーンアップ
         
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版・JSON対応・VVM切り替え対応）")
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版・JSON対応・VVM切り替え対応・表情制御対応）")
     
     def switch_vvm_model(self, vvm_name: str) -> bool:
         """VVMモデルを切り替え"""
@@ -1203,6 +1271,8 @@ class AudioQueryLipSyncSpeaker:
             time.sleep(0.05)  # 短縮
             logger.info("✅ 発話を中断しました（口を通常状態に復帰、表情は維持）")
 
+# ...existing code...
+
 def main():
     """メイン関数（JSON対応版）"""
     try:
@@ -1223,7 +1293,7 @@ def main():
         speaker = AudioQueryLipSyncSpeaker(server_url, onnxruntime_path, dict_dir, model_path, dialogue_file)
         
         # 簡易コンソール
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動（JSON対応版・VVM切り替え対応・自動再読み込み対応）")
+        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム起動（JSON対応版・VVM切り替え対応・自動再読み込み対応・表情制御対応）")
         logger.info("コマンド:")
         logger.info("  [セリフキー]: JSONに登録されたセリフを発話")
         logger.info("  L: JSONセリフ一覧表示")
@@ -1235,6 +1305,9 @@ def main():
         logger.info("  AUTO: 自動再読み込み機能の有効/無効切り替え")
         logger.info("  R: 設定リセット（全設定をニュートラルに戻す）")
         logger.info("  T: 口パターンテスト（通常口への復帰をテスト）")
+        logger.info("  S: 普通の目に切り替え (neutral)")
+        logger.info("  D: 幸せな目に切り替え (happy)")
+        logger.info("  F: 泣き顔に切り替え (crying)")
         logger.info("  Q: 終了")
         logger.info("  💡 JSONファイルを外部で編集すると自動で変更を検知・反映します")
         
@@ -1341,11 +1414,37 @@ def main():
                     logger.info("  5. おしゃべりモード無効化")
                     speaker.talking_controller.set_talking_mode(False)
                     logger.info("🧪 口パターンテスト完了")
+                
+                elif command.upper() == "S":
+                    # 普通の目に切り替え (neutral)
+                    logger.info("😐 表情を普通の目 (neutral) に切り替え中...")
+                    if speaker.expression_controller.set_expression("neutral"):
+                        logger.info("✅ 普通の目に切り替え完了")
+                    else:
+                        logger.warning("⚠️ 普通の目への切り替えに失敗しました")
+                
+                elif command.upper() == "D":
+                    # 幸せな目に切り替え (happy)
+                    logger.info("😊 表情を幸せな目 (happy) に切り替え中...")
+                    if speaker.expression_controller.set_expression("happy"):
+                        logger.info("✅ 幸せな目に切り替え完了")
+                    else:
+                        logger.warning("⚠️ 幸せな目への切り替えに失敗しました")
+                
+                elif command.upper() == "F":
+                    # 泣き顔に切り替え (crying)
+                    logger.info("😢 表情を泣き顔 (crying) に切り替え中...")
+                    if speaker.expression_controller.set_expression("crying"):
+                        logger.info("✅ 泣き顔に切り替え完了")
+                    else:
+                        logger.warning("⚠️ 泣き顔への切り替えに失敗しました")
                         
                 elif command.upper() == "Q":
                     speaker.stop_speaking()
                     # 口だけを通常の口に戻す（表情は維持）
                     speaker.talking_controller.set_mouth_pattern_fast(None)
+                    # セッションクリーンアップ
+                    speaker.expression_controller.cleanup_session()
                     logger.info("👋 システム終了")
                     break
                 
@@ -1358,7 +1457,7 @@ def main():
                             threading.Thread(target=lambda: speaker.speak_dialogue(command), daemon=True).start()
                         else:
                             logger.warning(f"無効なコマンドまたはセリフキーです: '{command}'")
-                            logger.info("利用可能なコマンド: L, V, VM [モデル], C, A, RL, AUTO, R, T, Q または登録済みセリフキー")
+                            logger.info("利用可能なコマンド: L, V, VM [モデル], C, A, RL, AUTO, R, T, S, D, F, Q または登録済みセリフキー")
                     else:
                         logger.warning("コマンドを入力してください")
                     
@@ -1366,6 +1465,8 @@ def main():
             speaker.stop_speaking()
             # Ctrl+C終了時も口だけを通常の口に戻す（表情は維持）
             speaker.talking_controller.set_mouth_pattern_fast(None)
+            # セッションクリーンアップ
+            speaker.expression_controller.cleanup_session()
             logger.info("\n👋 システム終了")
         
     except Exception as e:
@@ -1375,44 +1476,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-使用例:
-
-# コンソールモード（対話的・JSON対応・VVM切り替え対応・自動再読み込み対応）
-python3 audioquery_phoneme.py
-
-# JSONセリフファイルの編集（リアルタイム反映）
-dialogue_data.jsonを編集すると自動で変更を検知・反映
-- "enabled": true/false でセリフの有効/無効を制御
-- "vvm_model": "13.vvm" でセリフ個別にVVMモデル指定
-- 数値キー（"1", "2", "3"）や文字キー（"hello", "thanks"）に対応
-- 各セリフに個別の音声パラメータ設定可能
-- プログラムを落とさずに変更点がリアルタイムで反映される
-
-# 基本コマンド:
-#   L: セリフ一覧表示（自動で最新JSONを読み込み）
-#   V: VVMモデル一覧表示  
-#   VM [モデル名]: VVMモデル切り替え (例: VM 0.vvm)
-#   [キー]: 指定されたキーのセリフを発話（自動でVVM切り替え・JSON再読み込み）
-#   C: カスタムテキスト発話
-#   RL: 手動セリフファイル再読み込み
-#   AUTO: 自動再読み込み機能の有効/無効切り替え
-#   Q: 終了
-
-# リアルタイム編集ワークフロー:
-# 1. プログラム起動: python3 audioquery_phoneme.py
-# 2. 別エディタでdialogue_data.jsonを編集
-# 3. 任意のコマンドを実行（自動でJSONの変更を検知・反映）
-# 4. すぐに変更されたセリフが利用可能
-
-# VVMモデル切り替え例:
-#   VM 0.vvm  # 四国めたんに切り替え
-#   VM 3.vvm  # 春日部つむぎに切り替え
-#   voice_test_0  # 四国めたんでテスト発話
-#   voice_test_3  # 春日部つむぎでテスト発話
-
-# 従来の音韻解析コマンドも利用可能
-python3 voicevox_lipsync.py --model ./voicevox_core/models/vvms/13.vvm --style-id 54 --speed 1.0 --pitch 0.0 --intonation 0.9
-
-"""

@@ -189,6 +189,26 @@
       "intonation": 1.0,
       "vvm_model": "13.vvm",
       "description": "日常挨拶"
+    },
+    "z": {
+      "text": "にんてんどーすとあにいきたいのだ！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.02,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "日常挨拶"
+    },
+    "x": {
+      "text": "坂本さん",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.02,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "日常挨拶"
     }
   },
   "vvm_models": {
