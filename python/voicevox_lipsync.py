@@ -536,14 +536,14 @@ class VoiceVoxConsole:
         self.speaker = speaker
         self.is_running = False
         
-        # プリセットセリフの設定（ファイルから読み込み、なければデフォルト）
+        # プリセットセリフの設定（dialogue_data.jsonから読み込み）
         self.preset_speeches = self._load_preset_speeches()
     
     def _load_preset_speeches(self) -> dict:
-        """プリセットセリフをファイルから読み込み"""
-        speech_file = "preset_speeches.json"
+        """プリセットセリフをdialogue_data.jsonから読み込み"""
+        speech_file = "dialogue_data.json"
         
-        # デフォルトのセリフ設定
+        # デフォルトのセリフ設定（フォールバック用）
         default_speeches = {
             "1": {
                 "text": "こんにちは、僕の名前はシリウスです。",
@@ -570,15 +570,33 @@ class VoiceVoxConsole:
         try:
             if os.path.exists(speech_file):
                 with open(speech_file, 'r', encoding='utf-8') as f:
-                    loaded_speeches = json.load(f)
-                logger.info(f"📄 プリセットセリフファイル読み込み完了: {speech_file}")
-                logger.info(f"🎭 読み込んだセリフ数: {len(loaded_speeches)}")
-                return loaded_speeches
+                    dialogue_data = json.load(f)
+                
+                # dialogue_data.jsonの構造に対応
+                if "dialogues" in dialogue_data:
+                    loaded_speeches = {}
+                    for key, dialogue in dialogue_data["dialogues"].items():
+                        # enabledがTrueのもののみ読み込み
+                        if dialogue.get("enabled", True):
+                            loaded_speeches[key] = {
+                                "text": dialogue["text"],
+                                "description": dialogue.get("description", "プリセット"),
+                                "style_id": dialogue.get("style_id"),
+                                "speed": dialogue.get("speed", 1.0),
+                                "pitch": dialogue.get("pitch", 0.0),
+                                "intonation": dialogue.get("intonation", 0.9),
+                                "vvm_model": dialogue.get("vvm_model")
+                            }
+                    
+                    logger.info(f"📄 プリセットセリフファイル読み込み完了: {speech_file}")
+                    logger.info(f"🎭 読み込んだセリフ数: {len(loaded_speeches)}")
+                    return loaded_speeches
+                else:
+                    logger.warning(f"⚠️ dialogue_data.jsonに'dialogues'キーが見つかりません")
+                    return default_speeches
             else:
                 logger.info(f"📄 プリセットセリフファイルが見つかりません: {speech_file}")
                 logger.info("🎭 デフォルトセリフを使用します")
-                # デフォルトファイルを作成
-                self._save_preset_speeches(default_speeches, speech_file)
                 return default_speeches
         except Exception as e:
             logger.error(f"❌ プリセットセリフファイル読み込みエラー: {e}")
@@ -652,10 +670,32 @@ class VoiceVoxConsole:
         if key in self.preset_speeches:
             speech = self.preset_speeches[key]
             logger.info(f"🎭 プリセット発話: {speech['description']}")
-            threading.Thread(
-                target=lambda: self.speaker.speak_sync(speech['text']), 
-                daemon=True
-            ).start()
+            
+            # 個別設定がある場合は一時的に適用
+            original_style = self.speaker.style_id
+            original_speed = self.speaker.speed_scale
+            original_pitch = self.speaker.pitch_scale
+            original_intonation = self.speaker.intonation_scale
+            
+            # セリフ固有の設定を適用
+            if speech.get("style_id"):
+                self.speaker.set_voice_parameters(
+                    speech.get("speed", original_speed),
+                    speech.get("pitch", original_pitch),
+                    speech.get("intonation", original_intonation),
+                    speech.get("style_id")
+                )
+            
+            def speak_and_restore():
+                try:
+                    self.speaker.speak_sync(speech['text'])
+                finally:
+                    # 元の設定に戻す
+                    self.speaker.set_voice_parameters(
+                        original_speed, original_pitch, original_intonation, original_style
+                    )
+            
+            threading.Thread(target=speak_and_restore, daemon=True).start()
         else:
             logger.warning(f"❌ プリセット'{key}'は存在しません")
     

@@ -11,84 +11,84 @@
       "description": "自己紹介"
     },
     "2": {
-      "text": "坂本くん、お疲れ様です",
+      "text": "よろしくおねがいします",
       "enabled": true,
-      "style_id": 42,
-      "speed": 1.1,
+      "style_id": 54,
+      "speed": 1.0,
       "pitch": 0.0,
-      "intonation": 1.2,
-      "vvm_model": "10.vvm",
-      "description": "挨拶"
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
     },
     "3": {
-      "text": "マネケンのワッフルが食べたい",
+      "text": "うん，だいたいわかった",
       "enabled": true,
       "style_id": 54,
       "speed": 1.0,
       "pitch": 0.0,
       "intonation": 0.9,
       "vvm_model": "13.vvm",
-      "description": "発音練習"
+      "description": "自己紹介"
     },
     "4": {
-      "text": "キャンキャン！",
+      "text": "こんにちは！",
       "enabled": true,
       "style_id": 54,
-      "speed": 1.3,
-      "pitch": 0.02,
-      "intonation": 1.0,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
       "vvm_model": "13.vvm",
-      "description": "日常挨拶"
-    },
-    "6": {
-      "text": "ワンワン！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.3,
-      "pitch": 0.02,
-      "intonation": 1.0,
-      "vvm_model": "13.vvm",
-      "description": "日常挨拶"
+      "description": "自己紹介"
     },
     "5": {
-      "text": "ありがとうございます",
+      "text": "ばいば〜〜い！",
       "enabled": true,
-      "style_id": 42,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "6": {
+      "text": "ありがとうございます！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "7": {
+      "text": "あたまとあしもとにあるセンサーをつかって，自分で考えてうごけるのだ！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "8": {
+      "text": "写真撮影，おっけーなのだ！",
+      "enabled": true,
+      "style_id": 54,
+      "speed": 1.0,
+      "pitch": 0.0,
+      "intonation": 0.9,
+      "vvm_model": "13.vvm",
+      "description": "自己紹介"
+    },
+    "9": {
+      "text": "おなかすいた",
+      "enabled": true,
+      "style_id": 54,
       "speed": 1.0,
       "pitch": 0.0,
       "intonation": 1.5,
-      "vvm_model": "10.vvm",
-      "description": "お礼"
-    },
-    "7": {
-      "text": "僕に汚い手でさわらないでください！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.00,
-      "intonation": 1.5,
       "vvm_model": "13.vvm",
-      "description": "日常挨拶"
-    },
-    "8": {
-      "text": "めいどばい こたにりょうた!!",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.00,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "日常挨拶"
-    },
-    "9": {
-      "text": "共著者 坂本しんのすけ, 黒瀬太一",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.00,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "日常挨拶"
+      "description": "自己紹介"
     },
     "0": {
       "text": "いやだ!いやだ!いやだ!いやだ!いやだ!",
@@ -99,136 +99,6 @@
       "intonation": 1.5,
       "vvm_model": "13.vvm",
       "description": "日常挨拶"
-    },
-    "m": {
-      "text": "まえだくんさあ",
-      "enabled": true,
-      "style_id": 42,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 1.2,
-      "vvm_model": "10.vvm",
-      "description": "お礼"
-    },
-    "n": {
-      "text": "でてぃっくがこわれちゃった！",
-      "enabled": true,
-      "style_id": 42,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 1.2,
-      "vvm_model": "10.vvm",
-      "description": "お礼"
-    },
-    "-": {
-      "text": "へいしり！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "=": {
-      "text": "おっけーぐーぐる！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "g": {
-      "text": "うん, わかった！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.2,
-      "pitch": 0.0,
-      "intonation": 1.0,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "h": {
-      "text": "うん, だいたいわかった！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.2,
-      "pitch": 0.0,
-      "intonation": 1.0,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "j": {
-      "text": "そうだね！よくわかる！",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 1.0,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-     "k": {
-      "text": "僕の自己位置を教えて",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "y": {
-      "text": "エイチエスアール スタート!",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.2,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "u": {
-      "text": "イット ユーセイ グラスプ ディ アップル",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.3,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-     "i": {
-      "text": "自爆まで残り3秒前．3,,,2,,,1,,, ドガーーーン！！",
-      "enabled": true,
-      "style_id": 109,
-      "speed": 0.9,
-      "pitch": 0.0,
-      "intonation": 1.0,
-      "vvm_model": "21.vvm",
-      "description": "自己紹介"
-    },
-    "e": {
-      "text": "バッテリー残量が少なくなりました．充電してください．",
-      "enabled": true,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "自己紹介"
-    },
-    "None": {
-      "text": "これは無効化されたセリフです",
-      "enabled": false,
-      "style_id": 54,
-      "speed": 1.0,
-      "pitch": 0.0,
-      "intonation": 0.9,
-      "vvm_model": "13.vvm",
-      "description": "無効化テスト用"
     }
   },
   "vvm_models": {
