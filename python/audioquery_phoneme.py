@@ -973,15 +973,17 @@ class AudioQueryLipSyncSpeaker:
                     logger.warning("⚠️ 音声再生開始待機タイムアウト - リップシンクを開始")
                     break
             
+            # 音声再生が確実に開始されるまで少し待機
             if audio_result.get('playback_started', False):
+                await asyncio.sleep(0.5)  # 500ms追加遅延
                 logger.info("🎭 音声再生開始確認 - AudioQuery同期リップシンク開始")
             else:
                 logger.info("🎭 AudioQuery同期リップシンク開始（音声再生開始未確認）")
             
             await self._execute_audioquery_lipsync(adjusted_sequence, audio_result)
             
-            # おしゃべりモード有効化タスクの完了を待機（まだ完了していない場合）
-            if not talking_mode_task.done():
+            # おしゃべりモード有効化タスクの完了を待機（タスクが作成されている場合）
+            if talking_mode_task and not talking_mode_task.done():
                 await talking_mode_task
             
             # 8. 音声再生の完了を待機（短いインターバルで監視）
