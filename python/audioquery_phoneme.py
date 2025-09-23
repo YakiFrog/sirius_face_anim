@@ -949,7 +949,7 @@ class AudioQueryLipSyncSpeaker:
             adjusted_sequence = self._adjust_sequence_to_audio_length(mouth_sequence, actual_audio_duration)
             
             # 5. 音声再生とリップシンクを並行実行
-            audio_result = {'start_time': 0.0, 'completed': False}
+            audio_result = {'start_time': 0.0, 'completed': False, 'playback_started': False}
             
             # 音声再生スレッドを開始
             audio_thread = self._start_audio_playback(wav_data, audio_result)
@@ -958,11 +958,26 @@ class AudioQueryLipSyncSpeaker:
                 logger.info("🛑 発話開始時に中断されました")
                 return False
             
-            # 6. おしゃべりモードを有効化するタスクを開始
-            talking_mode_task = asyncio.create_task(self._delayed_talking_mode_activation())
+            # 6. おしゃべりモードを音声再生開始後に有効化
+            talking_mode_task = None
+            if audio_result.get('playback_started', False):
+                talking_mode_task = asyncio.create_task(self._delayed_talking_mode_activation())
             
-            # 7. 調整された音韻に基づいたリップシンク実行
-            logger.info("🎭 AudioQuery同期リップシンク開始")
+            # 7. 音声再生開始を待ってからリップシンク実行
+            logger.info("⏳ 音声再生開始を待機中...")
+            wait_start = time.time()
+            while not audio_result.get('playback_started', False) and not audio_result.get('completed', False) and self.is_speaking:
+                await asyncio.sleep(0.01)  # 10ms毎にチェック
+                # タイムアウト防止（最大1秒待機）
+                if time.time() - wait_start > 1.0:
+                    logger.warning("⚠️ 音声再生開始待機タイムアウト - リップシンクを開始")
+                    break
+            
+            if audio_result.get('playback_started', False):
+                logger.info("🎭 音声再生開始確認 - AudioQuery同期リップシンク開始")
+            else:
+                logger.info("🎭 AudioQuery同期リップシンク開始（音声再生開始未確認）")
+            
             await self._execute_audioquery_lipsync(adjusted_sequence, audio_result)
             
             # おしゃべりモード有効化タスクの完了を待機（まだ完了していない場合）
@@ -1059,6 +1074,9 @@ class AudioQueryLipSyncSpeaker:
         return adjusted_sequence
     
     async def _delayed_talking_mode_activation(self):
+        """遅延おしゃべりモード有効化（音声再生開始直後）"""
+        await asyncio.sleep(0.05)  # 50ms遅延（音声再生開始確認のため）
+        
         try:
             if self.is_speaking:
                 logger.info("🎭おしゃべりモード有効化")
@@ -1130,12 +1148,17 @@ class AudioQueryLipSyncSpeaker:
             if not self.is_speaking:
                 result_dict['completed'] = True
                 result_dict['start_time'] = time.time()
+                result_dict['playback_started'] = True
                 return
             
             start_time = time.time()
             result_dict['start_time'] = start_time
             
             try:
+                # 音声再生開始をマーク
+                result_dict['playback_started'] = True
+                logger.info("🔊 音声再生開始")
+                
                 duration = self.audio_player.play_wav_data(wav_data)
                 actual_time = time.time() - start_time
                 
