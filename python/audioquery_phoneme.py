@@ -27,45 +27,60 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class ExpressionController:
-    """表情制御クラス（main.pyのAPI連携）"""
+    """表情制御クラス（main.pyのAPI連携）- 高速化版"""
     
     def __init__(self, server_url="http://localhost:8080"):
         self.server_url = server_url
         
-        # HTTPセッション設定
+        # HTTPセッション設定（高速化）
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
-            'Connection': 'keep-alive'
+            'Connection': 'keep-alive',
+            'Keep-Alive': 'timeout=60, max=100'  # Keep-Alive最適化
         })
         
-        # コネクションプールの設定
+        # コネクションプールの設定（高速化）
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=1,
-            pool_maxsize=1,
-            max_retries=0
+            pool_connections=2,      # 1→2に増加
+            pool_maxsize=5,          # 1→5に増加
+            max_retries=1,           # 0→1に変更（軽微な再試行）
+            pool_block=False         # ノンブロッキング
         )
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
-    
+        
+        # 🚀 冗長リクエスト防止
+        self._last_expression = None
+        self._expression_cache_time = 0
+        
     def set_expression(self, expression: str) -> bool:
-        """表情を設定"""
+        """表情を設定（冗長リクエスト防止版）"""
         try:
+            # 🚀 同じ表情の連続設定を防止
+            current_time = time.time()
+            if (self._last_expression == expression and 
+                current_time - self._expression_cache_time < 0.1):  # 100ms以内の同じ表情は無視
+                logger.debug(f"⚡ 表情設定スキップ（冗長防止）: {expression}")
+                return True
+            
             response = self.session.post(
                 f"{self.server_url}/expression",
                 json={'expression': expression},
-                timeout=0.2
+                timeout=0.15  # 0.2→0.15に短縮
             )
             
             if response.status_code == 200:
-                logger.info(f"✅ 表情設定成功: {expression}")
+                self._last_expression = expression
+                self._expression_cache_time = current_time
+                logger.debug(f"⚡ 表情設定成功: {expression}")  # INFO→DEBUGに変更
                 return True
             else:
                 logger.warning(f"❌ 表情設定失敗: HTTP {response.status_code}")
                 return False
                 
         except Exception as e:
-            logger.warning(f"❌ 表情設定エラー: {e}")
+            logger.debug(f"❌ 表情設定エラー: {e}")  # WARNING→DEBUGに変更
             return False
     
     def get_current_expression(self) -> Optional[str]:
@@ -846,13 +861,13 @@ class VoiceVoxSynthesizer:
         return list(self.loaded_models.keys())
 
 class AudioQueryLipSyncSpeaker:
-    """AudioQuery音韻解析 + リップシンク発話システム（高速化版）"""
+    """AudioQuery音韻解析 + リップシンク発話システム（超高速化版）"""
     
     def __init__(self, server_url="http://localhost:8080", 
-                 voicevox_onnxruntime_path="./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib",
-                 open_jtalk_dict_dir="./voicevox_core/dict/open_jtalk_dic_utf_8-1.11",
-                 model_path="./voicevox_core/models/vvms/13.vvm",
-                 dialogue_file_path="./dialogue_data.json"):
+                 voicevox_onnxruntime_path="/Users/kotaniryota/NLAB/sirius_face_anim/python/voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.1.17.3.dylib",
+                 open_jtalk_dict_dir="/Users/kotaniryota/NLAB/sirius_face_anim/python/voicevox_core/dict/open_jtalk_dic_utf_8-1.11",
+                 model_path="/Users/kotaniryota/NLAB/sirius_face_anim/python/voicevox_core/models/vvms/13.vvm",
+                 dialogue_file_path="/Users/kotaniryota/NLAB/sirius_face_anim/python/dialogue_data.json"):
         
         self.talking_controller = TalkingModeController(server_url)
         self.expression_controller = ExpressionController(server_url)  # 表情制御を追加
@@ -878,9 +893,37 @@ class AudioQueryLipSyncSpeaker:
         self._session_cleanup_counter = 0
         self._session_cleanup_interval = 50  # 50回に1回セッションをクリーンアップ
         
-        logger.info("🤖 AudioQuery音韻解析 + リップシンクシステム初期化完了（高速化版・JSON対応・VVM切り替え対応・表情制御対応）")
+        # 🚀 高速化機能追加
+        self._audioquery_cache = {}  # AudioQueryキャッシュ
+        self._synthesis_cache = {}   # 合成音声キャッシュ（短時間）
+        self._cache_max_size = 20    # キャッシュ最大サイズ
+        self._last_cache_cleanup = time.time()
+        
+        logger.info("🚀 AudioQuery音韻解析 + リップシンクシステム初期化完了（超高速化版・キャッシュ機能・並列処理対応）")
     
-    def switch_vvm_model(self, vvm_name: str) -> bool:
+    def _cleanup_old_cache(self):
+        """古いキャッシュエントリをクリーンアップ"""
+        try:
+            # 合成音声キャッシュをクリア（5分で期限切れ）
+            self._synthesis_cache.clear()
+            logger.debug("🧹 合成音声キャッシュをクリーンアップしました")
+            
+            # AudioQueryキャッシュは半分だけ残す（よく使われるものを保持）
+            if len(self._audioquery_cache) > self._cache_max_size // 2:
+                items = list(self._audioquery_cache.items())
+                # 後半を保持（新しいもの）
+                keep_items = items[len(items)//2:]
+                self._audioquery_cache = dict(keep_items)
+                logger.debug(f"🧹 AudioQueryキャッシュをクリーンアップしました（{len(keep_items)}件保持）")
+                
+        except Exception as e:
+            logger.error(f"❌ キャッシュクリーンアップエラー: {e}")
+
+    async def synthesize_async(self, text: str, style_id: Optional[int] = None) -> bytes:
+        """非同期音声合成（高速化）"""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.synthesize, text, style_id
+        )
         """VVMモデルを切り替え"""
         model_path = self.dialogue_manager.get_vvm_model_path(vvm_name)
         if not model_path:
@@ -897,17 +940,55 @@ class AudioQueryLipSyncSpeaker:
         return success
     
     def synthesize(self, text: str, style_id: Optional[int] = None) -> bytes:
-        """音声合成"""
+        """音声合成（高速キャッシュ版）"""
         try:
             if style_id is None:
                 style_id = self.style_id
             
-            audio_query = self.voicevox.synthesizer.create_audio_query(text, style_id)
+            # 🚀 キャッシュキー生成
+            cache_key = f"{text}_{style_id}_{self.speed_scale}_{self.pitch_scale}_{self.intonation_scale}"
+            
+            # キャッシュから取得試行
+            if cache_key in self._synthesis_cache:
+                logger.debug(f"⚡ 音声合成キャッシュヒット: {text[:20]}...")
+                return self._synthesis_cache[cache_key]
+            
+            # AudioQueryキャッシュから取得試行
+            audioquery_key = f"{text}_{style_id}"
+            if audioquery_key in self._audioquery_cache:
+                audio_query = self._audioquery_cache[audioquery_key]
+                logger.debug(f"⚡ AudioQueryキャッシュヒット: {text[:20]}...")
+            else:
+                # 新規AudioQuery作成
+                audio_query = self.voicevox.synthesizer.create_audio_query(text, style_id)
+                # キャッシュサイズ管理
+                if len(self._audioquery_cache) >= self._cache_max_size:
+                    # 古いエントリを削除（FIFO）
+                    oldest_key = next(iter(self._audioquery_cache))
+                    del self._audioquery_cache[oldest_key]
+                self._audioquery_cache[audioquery_key] = audio_query
+            
+            # パラメータ設定
             audio_query.speed_scale = self.speed_scale
             audio_query.pitch_scale = self.pitch_scale
             audio_query.intonation_scale = self.intonation_scale
             
+            # 音声合成実行
             wav_data = self.voicevox.synthesizer.synthesis(audio_query, style_id)
+            
+            # 合成音声を短時間キャッシュ（5分以内は再利用）
+            if len(self._synthesis_cache) >= self._cache_max_size:
+                oldest_key = next(iter(self._synthesis_cache))
+                del self._synthesis_cache[oldest_key]
+            self._synthesis_cache[cache_key] = wav_data
+            
+            # 定期的なキャッシュクリーンアップ（5分経過後）
+            current_time = time.time()
+            if current_time - self._last_cache_cleanup > 300:  # 5分
+                self._cleanup_old_cache()
+                self._last_cache_cleanup = current_time
+            
+            logger.debug(f"✅ 音声合成完了（新規作成）: {text[:20]}...")
             return wav_data
             
         except Exception as e:
@@ -915,34 +996,57 @@ class AudioQueryLipSyncSpeaker:
             return b""
     
     async def speak_with_audioquery_lipsync(self, text: str, style_id: Optional[int] = None) -> bool:
-        """AudioQuery音韻解析を使用したリップシンク発話"""
+        """AudioQuery音韻解析を使用したリップシンク発話（超高速化版）"""
         
         if not self._speech_lock.acquire(blocking=False):
             logger.info("🛑 他の発話が進行中のため、この発話をスキップ")
             return False
         
         try:
-            logger.info(f"📢 AudioQuery音韻解析リップシンク発話開始: '{text}'")
+            start_time = time.time()
+            logger.info(f"� AudioQuery音韻解析リップシンク発話開始: '{text}'")
             self.is_speaking = True
             
-            # 1. AudioQuery音韻解析
-            logger.info("🔤 AudioQuery音韻解析実行中...")
-            mouth_sequence = self.analyzer.get_mouth_shape_sequence(text, style_id or self.style_id)
+            # 🚀 並列処理1: AudioQuery音韻解析と音声合成を並列実行
+            logger.info("⚡ 音韻解析と音声合成を並列実行中...")
+            
+            # タスクを並列実行（エラーハンドリングを改善）
+            try:
+                analysis_task = asyncio.create_task(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, self.analyzer.get_mouth_shape_sequence, text, style_id or self.style_id
+                    )
+                )
+                synthesis_task = asyncio.create_task(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, self.synthesize, text, style_id
+                    )
+                )
+                
+                # 並列実行完了を待機
+                mouth_sequence, wav_data = await asyncio.gather(analysis_task, synthesis_task)
+            except Exception as e:
+                logger.error(f"❌ 並列処理エラー: {e}")
+                # フォールバック: 逐次実行
+                logger.info("🔄 フォールバック: 逐次実行に切り替え")
+                mouth_sequence = self.analyzer.get_mouth_shape_sequence(text, style_id or self.style_id)
+                wav_data = self.synthesize(text, style_id)
+            
+            parallel_time = time.time() - start_time
+            logger.info(f"⚡ 並列処理完了: {parallel_time:.3f}秒")
             
             if not mouth_sequence:
                 logger.error("❌ 音韻解析結果が空です")
                 return False
             
-            # 2. 音声合成
-            logger.info("🎵 音声合成中...")
-            wav_data = self.synthesize(text, style_id)
-            
             if not wav_data:
                 logger.error("❌ 音声合成に失敗しました")
                 return False
             
-            # 3. 実際の音声長を取得
-            actual_audio_duration = self.audio_player._get_wav_duration(wav_data)
+            # 3. 実際の音声長を取得（高速化）
+            actual_audio_duration = await asyncio.get_event_loop().run_in_executor(
+                None, self.audio_player._get_wav_duration, wav_data
+            )
             logger.info(f"🎵 実際の音声長: {actual_audio_duration:.2f}秒")
             
             # 4. 音韻シーケンスを実際の音声長に合わせて調整
@@ -973,10 +1077,10 @@ class AudioQueryLipSyncSpeaker:
                     logger.warning("⚠️ 音声再生開始待機タイムアウト - リップシンクを開始")
                     break
             
-            # 音声再生が確実に開始されるまで少し待機
+            # 🚀 音声再生開始の高速確認（500ms→100ms）
             if audio_result.get('playback_started', False):
-                await asyncio.sleep(0.5)  # 500ms追加遅延
-                logger.info("🎭 音声再生開始確認 - AudioQuery同期リップシンク開始")
+                await asyncio.sleep(0.1)  # 100ms最小遅延（400ms短縮）
+                logger.info("⚡ 音声再生開始確認 - AudioQuery同期リップシンク開始")
             else:
                 logger.info("🎭 AudioQuery同期リップシンク開始（音声再生開始未確認）")
             
